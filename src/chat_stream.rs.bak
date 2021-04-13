@@ -1,0 +1,82 @@
+use std::collections::HashMap;
+use std::convert::Infallible;
+use std::path::{Path, PathBuf};
+
+use super::{get_streams, STREAMS_DIR};
+
+use futures::{stream::iter, Stream, StreamExt};
+
+use warp::{sse::Event, Filter, Reply};
+
+use chrono::{DateTime, Duration, FixedOffset, Local, NaiveDateTime, TimeZone};
+
+use tokio;
+use tokio::fs::File;
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::sync::mpsc;
+
+use tokio_stream::wrappers::UnboundedReceiverStream;
+
+fn parse_line(line: &str) -> (DateTime<FixedOffset>, &str) {
+    let splitted: Vec<_> = line.splitn(2, ' ').collect();
+    (
+        DateTime::parse_from_rfc3339(splitted[0]).unwrap(),
+        splitted[1],
+    )
+}
+
+fn sse_events(stream_id: u64, offset: usize) -> impl Stream<Item = Result<Event, Infallible>> {
+    let stream = get_streams()
+        .into_iter()
+        .find(|s| s.id == stream_id as i64)
+        .unwrap();
+
+    let file_name = stream.file_name.clone();
+    let path = stream.chat_file_path();
+
+    let (tx, rx) = mpsc::unbounded_channel();
+    let rx = UnboundedReceiverStream::new(rx);
+
+    tokio::spawn(async move {
+        let local_ts = Local.timestamp(0, 0);
+        let tz_offset = local_ts.offset();
+        let mut prev_datetime = DateTime::from_utc(
+            stream.datetime() + Duration::seconds(offset as i64) - Duration::hours(1),
+            *tz_offset,
+        );
+
+        let f = File::open(path).await.unwrap();
+        let f = BufReader::new(f);
+
+        let mut lines = f.lines();
+        while let Some(line) = lines.next_line().await.unwrap() {
+            let (datetime, json) = parse_line(&line);
+
+            if datetime < prev_datetime {
+                continue;
+            }
+
+            // REVIEW: this is somewhat accurate?
+            println!("going to sleep: {:?}", (datetime - prev_datetime).to_std());
+            tokio::time::sleep((datetime - prev_datetime).to_std().unwrap()).await;
+
+            println!("{}", json);
+            if tx.send(json.to_owned()).is_err() {
+                println!("done");
+                return;
+            }
+
+            prev_datetime = datetime;
+        }
+    });
+
+    rx.map(|msg| Ok(Event::default().data(msg)))
+}
+
+pub fn get_filter(stream_id: u64, map: HashMap<String, String>) -> impl Reply {
+    let offset = map
+        .get("offset")
+        .map(|o| o.parse::<usize>().unwrap())
+        .unwrap_or(0);
+    warp::sse::reply(warp::sse::keep_alive().stream(sse_events(stream_id, offset)))
+}

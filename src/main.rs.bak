@@ -1,0 +1,458 @@
+//mod chat_stream;
+mod create_preview;
+
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
+use std::ffi::OsString;
+use std::io;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+
+use actix_files::{Files, NamedFile};
+use actix_web::{
+    get, middleware, post, web, App, HttpRequest, HttpResponse, HttpServer, Responder,
+};
+
+use crate::create_preview::*;
+
+use tokio;
+use tokio::fs::{read_dir, remove_dir_all, remove_file};
+use tokio::runtime::Runtime;
+use tokio::sync;
+use tokio::time;
+
+use rusqlite::{params, Connection};
+
+use serde::{Deserialize, Serialize};
+
+use once_cell::sync::OnceCell;
+
+use chrono::NaiveDateTime;
+
+static CONN: OnceCell<Arc<Mutex<Connection>>> = OnceCell::new();
+static STREAMS_DIR: &'static str = "/streams/lekkerspelen";
+static PREVIEW_WORKERS: usize = 2;
+
+fn get_preview_path(stream_id: i64) -> PathBuf {
+    Path::new("./previews")
+        .join(stream_id.to_string())
+        .join("preview.webm")
+}
+fn get_thumbnails_path(stream_id: i64) -> PathBuf {
+    Path::new("./thumbnails").join(stream_id.to_string())
+}
+
+macro_rules! log_err {
+    ($item:expr) => {
+        match $item {
+            Ok(_) => {}
+            Err(e) => eprintln!("error: {}", e),
+        }
+    };
+}
+
+#[derive(Clone, Debug)]
+struct PreviewJob {
+    path: PathBuf,
+    stream_id: i64,
+}
+
+async fn root() -> impl Responder {
+    NamedFile::open(Path::new("./build").join("index.html"))
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct PersonInfo {
+    id: i64,
+    name: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct GameInfo {
+    id: i64,
+    name: String,
+    platform: Option<String>,
+    start_time: f64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct StreamInfo {
+    id: i64,
+    file_name: String,
+    file_size: u64,
+    timestamp: u64,
+    duration: f64,
+    has_preview: bool,
+    thumbnail_count: usize,
+
+    persons: Vec<PersonInfo>,
+    games: Vec<GameInfo>,
+}
+
+impl StreamInfo {
+    fn preview_url(&self) -> Option<String> {
+        if self.has_preview {
+            Some(format!("/preview/{}/preview.webm", self.id))
+        } else {
+            None
+        }
+    }
+
+    fn thumbnail_urls(&self) -> Vec<String> {
+        (0..self.thumbnail_count)
+            .map(|i| format!("/thumbnail/{}/{}.jpg", self.id, i))
+            .collect()
+    }
+
+    fn datetime(&self) -> NaiveDateTime {
+        NaiveDateTime::from_timestamp(self.timestamp as i64, 0)
+    }
+}
+
+fn get_streams() -> Vec<StreamInfo> {
+    let conn = CONN.get().unwrap();
+    let conn = conn.lock().unwrap();
+
+    let mut stmt = conn
+        .prepare("SELECT id,filename,filesize,ts,duration FROM streams")
+        .unwrap();
+    let it = stmt
+        .query_map(params![], |row| {
+            let id: i64 = row.get(0).unwrap();
+            let file_name: String = row.get(1).unwrap();
+            let file_size: i64 = row.get(2).unwrap();
+            let ts: i64 = row.get(3).unwrap();
+            let duration: f64 = row.get(4).unwrap();
+
+            Ok(StreamInfo {
+                id,
+                file_name,
+                file_size: file_size as u64,
+                timestamp: ts as u64,
+                duration,
+                has_preview: false,
+                thumbnail_count: 0,
+
+                persons: vec![],
+                games: vec![],
+            })
+        })
+        .unwrap();
+
+    let mut streams: Vec<_> = it.map(|x| x.unwrap()).collect();
+    for stream in &mut streams {
+        let preview_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) from stream_previews where stream_id = ?1",
+                params![stream.id as i64],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        stream.has_preview = preview_count > 0;
+
+        let thumbnail_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) from stream_thumbnails where stream_id = ?1",
+                params![stream.id as i64],
+                |row| row.get(0),
+            )
+            .unwrap();
+        stream.thumbnail_count = thumbnail_count as usize;
+
+        let mut stmt = conn
+            .prepare("select game_id,games.name,games.platform,start_time from game_features inner join games on games.id = game_id where stream_id = ?1;")
+            .unwrap();
+        let it = stmt
+            .query_map(params![stream.id as i64], |row| {
+                let id: i64 = row.get(0).unwrap();
+                let name: String = row.get(1).unwrap();
+                let platform: Option<String> = row.get(2).unwrap();
+                let start_time: f64 = row.get(3).unwrap();
+
+                Ok(GameInfo {
+                    id,
+                    name,
+                    platform,
+                    start_time,
+                })
+            })
+            .unwrap();
+        stream.games = it.map(|x| x.unwrap()).collect();
+
+        let mut stmt = conn
+            .prepare("select person_id,persons.name from person_participations inner join persons on persons.id = person_id where stream_id = ?1;")
+            .unwrap();
+        let it = stmt
+            .query_map(params![stream.id as i64], |row| {
+                let id: i64 = row.get(0).unwrap();
+                let name: String = row.get(1).unwrap();
+
+                Ok(PersonInfo { id, name })
+            })
+            .unwrap();
+        stream.persons = it.map(|x| x.unwrap()).collect();
+    }
+    streams
+}
+
+async fn streams(req: HttpRequest) -> HttpResponse {
+    let streams = get_streams();
+
+    HttpResponse::Ok().json(streams)
+}
+
+async fn stream(req: HttpRequest) -> io::Result<NamedFile> {
+    let path: PathBuf = req.match_info().query("filename").parse().unwrap();
+    let path = Path::new(STREAMS_DIR).join(path);
+    NamedFile::open(path)
+}
+
+enum ItemState {
+    Unchanged,
+    New,
+    Modified,
+}
+
+async fn make_previews_and_thumbnails(job: PreviewJob) {
+    let sections = get_sections_from_file(&job.path).await.unwrap();
+    println!("sections are: {:?}", sections);
+
+    let preview_path = get_preview_path(job.stream_id);
+    create_preview(&job.path, &preview_path, &sections)
+        .await
+        .unwrap();
+
+    CONN.get()
+        .unwrap()
+        .lock()
+        .unwrap()
+        .execute(
+            "INSERT INTO stream_previews(stream_id) values(?1)",
+            params![job.stream_id],
+        )
+        .unwrap();
+
+    let thumbnail_path = get_thumbnails_path(job.stream_id);
+    let ts: Vec<_> = sections.iter().map(|(a, _)| *a).collect();
+    let items = create_thumbnails(&job.path, &thumbnail_path, &ts)
+        .await
+        .unwrap();
+    {
+        let conn = CONN.get().unwrap();
+        let conn = conn.lock().unwrap();
+
+        for (i, _) in items.iter().enumerate() {
+            conn.execute(
+                "INSERT INTO stream_thumbnails(stream_id, thumb_index) values(?1, ?2)",
+                params![job.stream_id, i as i32],
+            )
+            .unwrap();
+        }
+    }
+}
+
+async fn file_watcher(conn: Arc<Mutex<Connection>>, sender: sync::mpsc::Sender<PreviewJob>) {
+    let mut map: HashMap<_, _> = get_streams()
+        .into_iter()
+        .map(|stream| (stream.file_name, stream.file_size))
+        .collect();
+
+    loop {
+        let mut dir = read_dir(STREAMS_DIR).await.unwrap();
+
+        while let Some(item) = dir.next_entry().await.unwrap() {
+            let file_name = item.file_name();
+            let size = item.metadata().await.unwrap().len();
+
+            let entry = map.entry(file_name.to_string_lossy().to_string());
+            let state = match entry {
+                Entry::Vacant(item) => {
+                    item.insert(size);
+                    ItemState::New
+                }
+                Entry::Occupied(mut item) => {
+                    let old_size = item.get();
+                    let modified = *old_size != size;
+                    if modified {
+                        item.insert(size);
+                        ItemState::Modified
+                    } else {
+                        ItemState::Unchanged
+                    }
+                }
+            };
+
+            let path = Path::new(STREAMS_DIR).join(file_name.clone());
+
+            // HACK
+            match path.extension() {
+                None => continue,
+                Some(e) => {
+                    if !(e == "mp4" || e == "mkv" || e == "webm") {
+                        continue;
+                    }
+                }
+            }
+
+            // TODO: also handle remove items
+
+            match state {
+                ItemState::Unchanged => {}
+                ItemState::New => {
+                    println!("got new item: {}", file_name.to_string_lossy());
+
+                    let timestamp = {
+                        match NaiveDateTime::parse_from_str(
+                            path.file_stem().unwrap().to_str().unwrap(),
+                            "%Y-%m-%d %H:%M:%S",
+                        ) {
+                            Ok(date) => date.timestamp(),
+                            Err(_) => {
+                                eprintln!("error parsing timestamp for: {:?}", path);
+                                0
+                            }
+                        }
+                    };
+                    let duration = match get_video_duration_in_secs(&path).await {
+                        Ok(d) => d,
+                        Err(_) => {
+                            eprintln!("error getting duration for: {:?}", path);
+                            continue;
+                        }
+                    };
+
+                    let stream_id: i64 = {
+                        let conn = conn.lock().unwrap();
+                        conn.execute(
+                            "INSERT INTO streams(filename, filesize, ts, duration) values(?1, ?2, ?3, ?4)",
+                            params![file_name.to_str().unwrap(), size as i64, timestamp, duration as f64],
+                        )
+                        .unwrap();
+                        conn.last_insert_rowid()
+                    };
+
+                    sender.send(PreviewJob { path, stream_id }).await.unwrap();
+                }
+                ItemState::Modified => {
+                    println!("got updated item: {}", file_name.to_string_lossy());
+
+                    let stream_id = {
+                        let conn = conn.lock().unwrap();
+
+                        // get stream_id by filename
+                        let stream_id: i64 = conn
+                            .query_row(
+                                "SELECT id from streams where filename = ?1",
+                                params![file_name.to_str().unwrap()],
+                                |row| row.get(0),
+                            )
+                            .unwrap();
+
+                        // update filesize
+                        conn.execute(
+                            "UPDATE streams SET filesize = ?1 WHERE id = ?2",
+                            params![size as i64, stream_id],
+                        )
+                        .unwrap();
+
+                        // remove preview
+                        conn.execute(
+                            "DELETE FROM stream_previews WHERE stream_id = ?1",
+                            params![stream_id],
+                        )
+                        .unwrap();
+                        // remove thumbnails
+                        conn.execute(
+                            "DELETE FROM stream_thumbnails WHERE stream_id = ?1",
+                            params![stream_id],
+                        )
+                        .unwrap();
+
+                        stream_id
+                    };
+
+                    log_err!(remove_file(get_preview_path(stream_id)).await);
+                    log_err!(remove_dir_all(get_thumbnails_path(stream_id)).await);
+
+                    sender.send(PreviewJob { path, stream_id }).await.unwrap();
+                }
+            }
+        }
+
+        time::sleep(time::Duration::from_secs(60)).await;
+    }
+}
+
+async fn preview_watcher(receiver: Arc<sync::Mutex<sync::mpsc::Receiver<PreviewJob>>>) {
+    loop {
+        let job = match {
+            let mut receiver = receiver.lock().await;
+            receiver.recv().await
+        } {
+            None => break,
+            Some(j) => j,
+        };
+
+        make_previews_and_thumbnails(job).await;
+    }
+}
+
+#[actix_web::main]
+async fn main() -> io::Result<()> {
+    let conn = Connection::open("./db.db").unwrap();
+    //conn.execute("PRAGMA foreign_keys = ?1", params![1])
+    //    .unwrap();
+
+    let conn = Arc::new(Mutex::new(conn));
+    match CONN.set(conn.clone()) {
+        Ok(_) => {}
+        Err(_) => panic!("oncecell already full"),
+    }
+
+    let (sender, receiver) = sync::mpsc::channel(1);
+    let receiver = Arc::new(sync::Mutex::new(receiver));
+
+    let rt = Runtime::new()?;
+    rt.spawn(async move {
+        file_watcher(conn, sender).await;
+    });
+
+    for _ in 0..PREVIEW_WORKERS {
+        let receiver_cloned = receiver.clone();
+        rt.spawn(async move {
+            preview_watcher(receiver_cloned).await;
+        });
+    }
+
+    /*
+    let input = Path::new("./input.webm");
+    let sections = get_sections_from_file(input).await.unwrap();
+    println!("{:?}", sections);
+    create_preview(input, Path::new("./preview.webm"), &sections)
+        .await
+        .unwrap();
+    let ts: Vec<_> = sections.iter().map(|(a, _)| *a).collect();
+    create_thumbnails(input, Path::new("./thumbnails"), &ts)
+        .await
+        .unwrap();
+    */
+
+    HttpServer::new(|| {
+        App::new()
+            .wrap(middleware::Compress::default())
+            .route("/streams", web::get().to(streams))
+            .route("/stream/{filename:.*}", web::get().to(stream))
+            .service(Files::new("/static", "./build/static"))
+            .service(Files::new("/preview", "./previews"))
+            .service(Files::new("/thumbnail", "./thumbnails"))
+            .route("/", web::get().to(root))
+            .service(Files::new("/", "./build"))
+            .default_service(web::route().to(root))
+    })
+    .bind("0.0.0.0:6070")?
+    .run()
+    .await?;
+
+    Ok(())
+}
