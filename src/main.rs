@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use crate::chat_stream::handle_ws;
+use crate::chat_stream::handle_chat_request;
 use crate::create_preview::*;
 use crate::types::*;
 
@@ -620,9 +620,10 @@ async fn main() -> io::Result<()> {
                 .and(warp::path!("stream" / u64 / "persons"))
                 .and(warp::body::json())
                 .map(replace_persons))
-            .or(warp::path!("stream" / u64 / "chat")
-                .and(warp::ws::ws())
-                .map(handle_ws))
+            .or(warp::get()
+                .and(warp::path!("stream" / u64 / "chat"))
+                .and(warp::query())
+                .and_then(handle_chat_request))
             .or(warp::put()
                 .and(warp::path!("user" / String / "progress"))
                 .and(warp::body::json())
