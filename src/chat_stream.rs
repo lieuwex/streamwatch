@@ -4,11 +4,6 @@ use super::DB;
 use std::collections::hash_map::{Entry, HashMap};
 use std::sync::Arc;
 
-use futures::{SinkExt, StreamExt};
-
-use warp::ws::{WebSocket, Ws};
-use warp::Reply;
-
 use chrono::{DateTime, Duration, FixedOffset, Local, TimeZone, Utc};
 
 use tokio;
@@ -132,13 +127,42 @@ impl FileReader {
 
 struct CacheItem {
     date: DateTime<Utc>,
-    file_reader: FileReader,
+    /// `FileReader`, if there is one. If this is `None` it means that the stream does not have a
+    /// chat file.
+    file_reader: Option<FileReader>,
 }
 
-static CACHE: Lazy<Arc<Mutex<HashMap<Uuid, CacheItem>>>> = Lazy::new(|| {
-    let map = HashMap::new();
-    Arc::new(Mutex::new(map))
-});
+static CACHE: Lazy<Arc<Mutex<HashMap<Uuid, CacheItem>>>> =
+    Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+
+pub async fn cache_pruner() {
+    let dur = std::time::Duration::from_secs(60 * 10);
+
+    loop {
+        let now = Utc::now();
+
+        {
+            let mut map = CACHE.lock().await;
+
+            let stale_keys: Vec<_> = map
+                .iter()
+                .filter(|(_, v)| v.date < (now - Duration::minutes(10)))
+                .map(|(k, _)| k.to_owned())
+                .collect();
+
+            for key in &stale_keys {
+                map.remove(key);
+            }
+
+            let n_removed = stale_keys.len();
+            if n_removed > 0 {
+                println!("pruned {} key(s)", n_removed);
+            }
+        }
+
+        tokio::time::sleep(dur.clone()).await;
+    }
+}
 
 pub async fn handle_chat_request(
     stream_id: u64,
@@ -156,58 +180,50 @@ pub async fn handle_chat_request(
     // TODO: we're doing some kind of immutable acces here, which means we should be able to
     // parallise the locking here and do something high perf and cool.
     let messages: Vec<Item> = {
-        // get lock on the map, and take the item from it
         let mut map = CACHE.lock().await;
-        let entry = map.remove(&session_token);
+        let mut entry = map.entry(session_token);
 
-        // if the item is present and not yet expired, return the item.  Otherwise return None.
-        let item = entry.and_then(|mut entry| {
-            let now = Utc::now();
+        let file_reader = match entry {
+            Entry::Occupied(ref mut entry) => {
+                println!("cache hit for {} ({})", stream_id, session_token);
 
-            if entry.date < (now - Duration::minutes(10)) {
-                None
-            } else {
-                entry.date = now;
-                Some(entry)
+                let entry = entry.get_mut();
+                (*entry).date = Utc::now();
+                &mut entry.file_reader
             }
-        });
+            Entry::Vacant(entry) => {
+                println!("cache miss for {} ({})", stream_id, session_token);
 
-        // generate a new reader, and item if needed.  Otherwise, return get old reader.
-        let file_reader = if let Some(item) = item {
-            println!("cache hit for: {} ({})", stream_id, session_token);
-            &mut map
-                .entry(session_token.clone())
-                .or_insert(CacheItem {
-                    date: Utc::now(),
-                    file_reader: item.file_reader,
-                })
-                .file_reader
-        } else {
-            println!("cache miss for: {} ({})", stream_id, session_token);
+                let stream = match {
+                    let db = DB.get().unwrap();
+                    let db = db.lock().unwrap();
+                    db.get_streams()
+                        .into_iter()
+                        .find(|s| s.id == stream_id as i64)
+                } {
+                    None => return Err(warp::reject::not_found()),
+                    Some(s) => s,
+                };
 
-            let stream = {
-                let db = DB.get().unwrap();
-                let db = db.lock().unwrap();
-                db.get_streams()
-                    .into_iter()
-                    .find(|s| s.id == stream_id as i64)
-                    .unwrap()
-            };
-            if !stream.has_chat {
-                return Err(warp::reject::not_found());
+                let file_reader = if stream.has_chat {
+                    Some(FileReader::new(stream).await)
+                } else {
+                    None
+                };
+
+                &mut entry
+                    .insert(CacheItem {
+                        date: Utc::now(),
+                        file_reader,
+                    })
+                    .file_reader
             }
-
-            let reader = FileReader::new(stream).await;
-            &mut map
-                .entry(session_token.clone())
-                .or_insert(CacheItem {
-                    date: Utc::now(),
-                    file_reader: reader,
-                })
-                .file_reader
         };
 
-        file_reader.get_between(start, end).await
+        match file_reader {
+            Some(reader) => reader.get_between(start, end).await,
+            None => vec![],
+        }
     };
 
     let s = serde_json::to_string(&Response {

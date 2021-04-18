@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use crate::chat_stream::handle_chat_request;
+use crate::chat_stream::{cache_pruner, handle_chat_request};
 use crate::create_preview::*;
 use crate::types::*;
 
@@ -601,6 +601,10 @@ async fn main() -> io::Result<()> {
             job_watcher(receiver_cloned).await;
         });
     }
+
+    tokio::spawn(async {
+        cache_pruner().await;
+    });
 
     warp::serve({
         let cors = warp::cors().allow_any_origin();
