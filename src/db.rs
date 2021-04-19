@@ -37,7 +37,7 @@ impl Database {
                     id,
                     file_name,
                     file_size: file_size as u64,
-                    timestamp: ts as u64,
+                    timestamp: ts,
                     duration,
                     has_preview,
                     thumbnail_count: thumbnail_count as usize,

@@ -4,7 +4,7 @@ use super::DB;
 use std::collections::hash_map::{Entry, HashMap};
 use std::sync::Arc;
 
-use chrono::{DateTime, Duration, FixedOffset, Local, TimeZone, Utc};
+use chrono::{DateTime, Duration, TimeZone, Utc};
 
 use tokio;
 use tokio::fs::File;
@@ -39,8 +39,8 @@ struct Response {
 }
 
 struct FileReader {
-    orphan: Option<(DateTime<FixedOffset>, String)>,
-    prev_datetime: DateTime<FixedOffset>,
+    orphan: Option<(DateTime<Utc>, String)>,
+    prev_datetime: DateTime<Utc>,
     stream: StreamInfo,
     lines: Lines<BufReader<ZstdDecoder<BufReader<File>>>>,
 }
@@ -52,26 +52,23 @@ impl FileReader {
         reader.lines()
     }
 
-    fn parse_line(line: &str) -> Result<(DateTime<FixedOffset>, &str), String> {
+    fn parse_line(line: &str) -> Result<(DateTime<Utc>, &str), String> {
         let splitted: Vec<_> = line.splitn(2, ' ').collect();
 
         let date = match DateTime::parse_from_rfc3339(splitted[0]) {
             Err(e) => return Err(e.to_string()),
-            Ok(d) => d,
+            Ok(d) => d.with_timezone(&Utc),
         };
 
         Ok((date, splitted[1]))
     }
 
     async fn new(stream: StreamInfo) -> Self {
-        let local_ts = Local.timestamp(0, 0);
-        let tz_offset = local_ts.offset();
-
         let lines = Self::create_lines(&stream).await;
 
         Self {
             orphan: None,
-            prev_datetime: DateTime::from_utc(stream.datetime() - Duration::hours(1), *tz_offset),
+            prev_datetime: stream.datetime(),
             stream,
             lines,
         }

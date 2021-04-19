@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use chrono::NaiveDateTime;
+use chrono::{DateTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::STREAMS_DIR;
@@ -49,8 +49,8 @@ impl StreamInfo {
             .collect()
     }
 
-    pub fn datetime(&self) -> NaiveDateTime {
-        NaiveDateTime::from_timestamp(self.timestamp as i64, 0)
+    pub fn datetime(&self) -> DateTime<Utc> {
+        Utc.timestamp(self.timestamp, 0)
     }
 
     pub fn chat_file_path(&self) -> PathBuf {
