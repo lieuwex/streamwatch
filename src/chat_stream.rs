@@ -12,6 +12,7 @@ use tokio::io::{AsyncBufReadExt, BufReader, Lines};
 use tokio::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
+use serde_json::value::RawValue;
 
 use async_compression::tokio::bufread::ZstdDecoder;
 
@@ -29,7 +30,7 @@ pub struct Request {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct Item {
     ts: usize,
-    content: String, // lazy response so we don't have to parse the json blob
+    content: Box<RawValue>, // lazy response so we don't have to parse the json blob
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -39,7 +40,7 @@ struct Response {
 }
 
 struct FileReader {
-    orphan: Option<(DateTime<Utc>, String)>,
+    orphan: Option<(DateTime<Utc>, Box<RawValue>)>,
     prev_datetime: DateTime<Utc>,
     stream: StreamInfo,
     lines: Lines<BufReader<ZstdDecoder<BufReader<File>>>>,
@@ -101,7 +102,8 @@ impl FileReader {
             let (datetime, json) = Self::parse_line(&line).unwrap();
 
             if datetime > end {
-                self.orphan = Some((datetime, json.to_string()));
+                let json = RawValue::from_string(json.to_string()).unwrap();
+                self.orphan = Some((datetime, json));
                 break;
             }
 
@@ -112,9 +114,10 @@ impl FileReader {
                 continue;
             }
 
+            let json = RawValue::from_string(json.to_string()).unwrap();
             res.push(Item {
                 ts: datetime.timestamp_millis() as usize,
-                content: json.to_string(),
+                content: json,
             });
         }
 
