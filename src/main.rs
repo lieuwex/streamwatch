@@ -1,3 +1,6 @@
+#![feature(iter_intersperse)]
+#![feature(hash_drain_filter)]
+
 mod chat_stream;
 mod create_preview;
 mod db;
@@ -76,21 +79,21 @@ fn streams() -> impl warp::Reply {
     warp::reply::json(&streams)
 }
 
-fn replace_games(stream_id: u64, items: Vec<GameItem>) -> impl warp::Reply {
+fn replace_games(stream_id: i64, items: Vec<GameItem>) -> impl warp::Reply {
     {
         let db = DB.get().unwrap();
         let db = db.lock().unwrap();
-        db.replace_games(stream_id, items);
+        db.replace_games(stream_id as u64, items);
     }
 
     warp::reply()
 }
 
-fn replace_persons(stream_id: u64, person_ids: Vec<i64>) -> impl warp::Reply {
+fn replace_persons(stream_id: i64, person_ids: Vec<i64>) -> impl warp::Reply {
     {
         let db = DB.get().unwrap();
         let db = db.lock().unwrap();
-        db.replace_persons(stream_id, person_ids);
+        db.replace_persons(stream_id as u64, person_ids);
     }
 
     warp::reply()
@@ -617,15 +620,15 @@ async fn main() -> io::Result<()> {
                 .and(warp::path!("games"))
                 .map(get_possible_games))
             .or(warp::put()
-                .and(warp::path!("stream" / u64 / "games"))
+                .and(warp::path!("stream" / i64 / "games"))
                 .and(warp::body::json())
                 .map(replace_games))
             .or(warp::put()
-                .and(warp::path!("stream" / u64 / "persons"))
+                .and(warp::path!("stream" / i64 / "persons"))
                 .and(warp::body::json())
                 .map(replace_persons))
             .or(warp::get()
-                .and(warp::path!("stream" / u64 / "chat"))
+                .and(warp::path!("stream" / i64 / "chat"))
                 .and(warp::query())
                 .and_then(handle_chat_request))
             .or(warp::put()

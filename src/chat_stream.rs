@@ -126,7 +126,8 @@ impl FileReader {
 }
 
 struct CacheItem {
-    date: DateTime<Utc>,
+    stream_id: i64,
+    last_access: DateTime<Utc>,
     /// `FileReader`, if there is one. If this is `None` it means that the stream does not have a
     /// chat file.
     file_reader: Option<FileReader>,
@@ -139,33 +140,29 @@ pub async fn cache_pruner() {
     let dur = std::time::Duration::from_secs(60 * 10);
 
     loop {
-        let now = Utc::now();
+        let removed_items: Vec<_> = CACHE
+            .lock()
+            .await
+            .drain_filter(|_, v| v.last_access < (Utc::now() - Duration::minutes(10)))
+            .collect();
 
-        {
-            let mut map = CACHE.lock().await;
-
-            let stale_keys: Vec<_> = map
-                .iter()
-                .filter(|(_, v)| v.date < (now - Duration::minutes(10)))
-                .map(|(k, _)| k.to_owned())
+        let n_removed = removed_items.len();
+        if n_removed > 0 {
+            let s: String = removed_items
+                .into_iter()
+                .map(|(k, v)| format!("{} ({})", k, v.stream_id))
+                .intersperse(", ".to_string())
                 .collect();
 
-            for key in &stale_keys {
-                map.remove(key);
-            }
-
-            let n_removed = stale_keys.len();
-            if n_removed > 0 {
-                println!("pruned {} key(s)", n_removed);
-            }
+            println!("pruned {} key(s): {}", n_removed, s);
         }
 
-        tokio::time::sleep(dur.clone()).await;
+        tokio::time::sleep(dur).await;
     }
 }
 
 pub async fn handle_chat_request(
-    stream_id: u64,
+    stream_id: i64,
     request: Request,
 ) -> Result<String, warp::Rejection> {
     let (session_token, start, end) = {
@@ -188,7 +185,7 @@ pub async fn handle_chat_request(
                 println!("cache hit for {} ({})", stream_id, session_token);
 
                 let entry = entry.get_mut();
-                (*entry).date = Utc::now();
+                entry.last_access = Utc::now();
                 &mut entry.file_reader
             }
             Entry::Vacant(entry) => {
@@ -197,9 +194,7 @@ pub async fn handle_chat_request(
                 let stream = match {
                     let db = DB.get().unwrap();
                     let db = db.lock().unwrap();
-                    db.get_streams()
-                        .into_iter()
-                        .find(|s| s.id == stream_id as i64)
+                    db.get_streams().into_iter().find(|s| s.id == stream_id)
                 } {
                     None => return Err(warp::reject::not_found()),
                     Some(s) => s,
@@ -213,7 +208,8 @@ pub async fn handle_chat_request(
 
                 &mut entry
                     .insert(CacheItem {
-                        date: Utc::now(),
+                        stream_id,
+                        last_access: Utc::now(),
                         file_reader,
                     })
                     .file_reader

@@ -24,7 +24,7 @@ pub struct StreamInfo {
     pub id: i64,
     pub file_name: String,
     pub file_size: u64,
-    pub timestamp: u64,
+    pub timestamp: i64,
     pub duration: f64,
     pub has_chat: bool,
     pub has_preview: bool,
