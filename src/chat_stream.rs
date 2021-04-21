@@ -182,14 +182,14 @@ pub async fn handle_chat_request(
 
         let file_reader = match entry {
             Entry::Occupied(ref mut entry) => {
-                println!("cache hit for {} ({})", stream_id, session_token);
+                println!("cache hit for {} ({})", session_token, stream_id);
 
                 let entry = entry.get_mut();
                 entry.last_access = Utc::now();
                 &mut entry.file_reader
             }
             Entry::Vacant(entry) => {
-                println!("cache miss for {} ({})", stream_id, session_token);
+                println!("cache miss for {} ({})", session_token, stream_id);
 
                 let stream = match {
                     let db = DB.get().unwrap();
