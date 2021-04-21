@@ -269,28 +269,28 @@ fn parse_filename(path_buf: &PathBuf) -> Option<DateTime<Local>> {
 
 async fn file_watcher(db: Arc<Mutex<db::Database>>, sender: sync::mpsc::Sender<Job>) {
     loop {
-        let db_map: HashMap<String, u64> = {
-            let db = db.lock().unwrap();
-            db.get_streams()
-                .into_iter()
-                .map(|stream| (stream.file_name, stream.file_size))
-                .collect()
-        };
-        let dir_map: HashMap<String, u64> = {
-            let dir = read_dir(STREAMS_DIR).await.unwrap();
-            ReadDirStream::new(dir)
-                .then(|item| async {
-                    let item = item.unwrap();
-                    let file_name = item.file_name().to_str().unwrap().to_owned();
-                    let size = item.metadata().await.unwrap().len();
-
-                    (file_name, size)
-                })
-                .collect()
-                .await
-        };
-
         let file_name_states = {
+            let db_map: HashMap<String, u64> = {
+                let db = db.lock().unwrap();
+                db.get_streams()
+                    .into_iter()
+                    .map(|stream| (stream.file_name, stream.file_size))
+                    .collect()
+            };
+            let dir_map: HashMap<String, u64> = {
+                let dir = read_dir(STREAMS_DIR).await.unwrap();
+                ReadDirStream::new(dir)
+                    .then(|item| async {
+                        let item = item.unwrap();
+                        let file_name = item.file_name().to_str().unwrap().to_owned();
+                        let size = item.metadata().await.unwrap().len();
+
+                        (file_name, size)
+                    })
+                    .collect()
+                    .await
+            };
+
             let mut m: HashMap<String, (u64, ItemState)> = HashMap::new();
 
             for dir_file in &dir_map {
@@ -315,12 +315,12 @@ async fn file_watcher(db: Arc<Mutex<db::Database>>, sender: sync::mpsc::Sender<J
                 m.insert(dir_file.0.to_string(), (*dir_file.1, state));
             }
 
-            for db_file in &db_map {
-                if dir_map.contains_key(db_file.0) {
+            for db_file in db_map {
+                if dir_map.contains_key(&db_file.0) {
                     continue;
                 }
 
-                m.insert(db_file.0.to_string(), (*db_file.1, ItemState::Removed));
+                m.insert(db_file.0, (db_file.1, ItemState::Removed));
             }
 
             m
