@@ -1,5 +1,6 @@
 #![feature(iter_intersperse)]
 #![feature(hash_drain_filter)]
+#![feature(destructuring_assignment)]
 
 mod chat_stream;
 mod create_preview;
@@ -84,7 +85,7 @@ fn replace_games(stream_id: i64, items: Vec<GameItem>) -> impl warp::Reply {
     {
         let db = DB.get().unwrap();
         let db = db.lock().unwrap();
-        db.replace_games(stream_id as u64, items);
+        db.replace_games(stream_id, items);
     }
 
     warp::reply()
@@ -278,7 +279,7 @@ async fn rescan_streams() -> Result<impl warp::Reply, warp::Rejection> {
             let db = db.lock().unwrap();
             db.get_streams()
                 .into_iter()
-                .map(|stream| (stream.file_name, stream.file_size))
+                .map(|stream| (stream.file_name.into_string(), stream.file_size))
                 .collect()
         };
         let dir_map: HashMap<String, u64> = {
@@ -330,6 +331,11 @@ async fn rescan_streams() -> Result<impl warp::Reply, warp::Rejection> {
         m
     };
 
+    let possible_games = {
+        let db = db.lock().unwrap();
+        db.get_possible_games()
+    };
+
     let mut all_unchanged = true;
     for (file_name, (file_size, state)) in file_name_states {
         let path = Path::new(STREAMS_DIR).join(file_name.clone());
@@ -365,6 +371,55 @@ async fn rescan_streams() -> Result<impl warp::Reply, warp::Rejection> {
                         .unwrap();
                     db.conn.last_insert_rowid()
                 };
+
+                let file_name = StreamFileName::from_string(file_name);
+                let games: Vec<GameInfo> = file_name
+                    .get_extra_info()
+                    .map(|(datapoints, _)| datapoints)
+                    .into_iter()
+                    .flatten()
+                    .filter(|datapoint| !datapoint.game.is_empty())
+                    .fold(vec![], |mut acc, datapoint| {
+                        let last_item_same_game = acc
+                            .last()
+                            .map(|x| x.twitch_name.as_ref().unwrap() == &datapoint.game)
+                            .unwrap_or(false);
+                        if last_item_same_game {
+                            return acc;
+                        }
+
+                        let game = possible_games
+                            .iter()
+                            .find(|g| {
+                                if let Some(twitch_name) = &g.twitch_name {
+                                    twitch_name == &datapoint.game
+                                } else {
+                                    false
+                                }
+                            })
+                            .cloned()
+                            .unwrap_or_else(|| {
+                                let db = db.lock().unwrap();
+                                db.insert_possible_game(GameInfo {
+                                    id: 0,
+                                    name: datapoint.game.clone(),
+                                    twitch_name: Some(datapoint.game),
+                                    platform: None,
+                                    start_time: (datapoint.timestamp - timestamp).max(0) as f64,
+                                })
+                            });
+
+                        acc.push(game);
+                        acc
+                    });
+                let games = games
+                    .into_iter()
+                    .map(|g| GameItem {
+                        id: g.id,
+                        start_time: g.start_time,
+                    })
+                    .collect();
+                db.lock().unwrap().replace_games(stream_id, games);
 
                 sender
                     .send(Job::Thumbnails {
@@ -446,18 +501,21 @@ async fn job_watcher(receiver: Arc<sync::Mutex<sync::mpsc::Receiver<Job>>>) {
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
-    let db = db::Database::new();
-    match DB.set(db.clone()) {
-        Ok(_) => {}
-        Err(_) => panic!("oncecell already full"),
+    macro_rules! okky {
+        ($cell:expr, $item:expr) => {
+            match $cell.set($item) {
+                Ok(_) => {}
+                Err(_) => panic!("oncecell already full"),
+            }
+        };
     }
 
+    let db = db::Database::new();
+    okky!(DB, db.clone());
+
     let (sender, receiver) = sync::mpsc::channel(1);
-    match SENDER.set(sender) {
-        Ok(_) => {}
-        Err(_) => panic!("oncecell already full"),
-    }
     let receiver = Arc::new(sync::Mutex::new(receiver));
+    okky!(SENDER, sender);
 
     for _ in 0..PREVIEW_WORKERS {
         let receiver_cloned = receiver.clone();

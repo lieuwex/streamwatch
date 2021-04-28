@@ -35,7 +35,7 @@ impl Database {
 
                 Ok(StreamInfo {
                     id,
-                    file_name,
+                    file_name: StreamFileName::from_string(file_name),
                     file_size: file_size as u64,
                     timestamp: ts,
                     duration,
@@ -45,13 +45,16 @@ impl Database {
                     games: vec![],
                     persons: vec![],
                     has_chat: false,
+
+                    datapoints: vec![],
+                    jumpcuts: vec![],
                 })
             })
             .unwrap();
         let mut streams: Vec<_> = it.map(|x| x.unwrap()).collect();
 
         let mut games_stmt = self.conn
-            .prepare("SELECT game_id,games.name,games.platform,start_time FROM game_features INNER JOIN games ON games.id = game_id WHERE stream_id = ?1 ORDER BY start_time;")
+            .prepare("SELECT game_id,games.name,games.platform,start_time,games.twitch_name FROM game_features INNER JOIN games ON games.id = game_id WHERE stream_id = ?1 ORDER BY start_time;")
             .unwrap();
 
         let mut persons_stmt = self.conn
@@ -65,12 +68,14 @@ impl Database {
                     let name: String = row.get(1).unwrap();
                     let platform: Option<String> = row.get(2).unwrap();
                     let start_time: f64 = row.get(3).unwrap();
+                    let twitch_name: Option<String> = row.get(4).unwrap();
 
                     Ok(GameInfo {
                         id,
                         name,
                         platform,
                         start_time,
+                        twitch_name,
                     })
                 })
                 .unwrap();
@@ -86,7 +91,11 @@ impl Database {
                 .unwrap();
             stream.persons = it.map(|x| x.unwrap()).collect();
 
-            stream.has_chat = stream.chat_file_path().exists();
+            stream.has_chat = stream.file_name.chat_file_path().exists();
+
+            if let Some(res) = stream.get_extra_info() {
+                (stream.datapoints, stream.jumpcuts) = res;
+            }
         }
 
         streams
@@ -111,18 +120,20 @@ impl Database {
     pub fn get_possible_games(&self) -> Vec<GameInfo> {
         let mut stmt = self
             .conn
-            .prepare("SELECT id,name,platform FROM games ORDER BY name")
+            .prepare("SELECT id,name,platform,twitch_name FROM games ORDER BY name")
             .unwrap();
 
         stmt.query_map(params![], |row| {
             let id: i64 = row.get(0).unwrap();
             let name: String = row.get(1).unwrap();
             let platform: Option<String> = row.get(2).unwrap();
+            let twitch_name: Option<String> = row.get(3).unwrap();
 
             Ok(GameInfo {
                 id,
                 name,
                 platform,
+                twitch_name,
                 start_time: 0.0, // HACK
             })
         })
@@ -130,11 +141,22 @@ impl Database {
         .map(|x| x.unwrap())
         .collect()
     }
-    pub fn replace_games(&self, stream_id: u64, items: Vec<GameItem>) {
+    pub fn insert_possible_game(&self, mut game: GameInfo) -> GameInfo {
+        self.conn
+            .execute(
+                "INSERT INTO GAMES(name, platform, twitch_name) VALUES(?1, ?2, ?3)",
+                params![game.name, game.platform, game.twitch_name],
+            )
+            .unwrap();
+        game.id = self.conn.last_insert_rowid();
+        game
+    }
+
+    pub fn replace_games(&self, stream_id: i64, items: Vec<GameItem>) {
         self.conn
             .execute(
                 "DELETE FROM game_features WHERE stream_id = ?1",
-                params![stream_id as i64],
+                params![stream_id],
             )
             .unwrap();
 
@@ -142,7 +164,7 @@ impl Database {
             self.conn
                 .execute(
                     "INSERT INTO game_features(stream_id, game_id, start_time) VALUES(?1, ?2, ?3)",
-                    params![stream_id as i64, item.id, item.start_time],
+                    params![stream_id, item.id, item.start_time],
                 )
                 .unwrap();
         }

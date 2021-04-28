@@ -4,7 +4,7 @@ use super::DB;
 use std::collections::hash_map::{Entry, HashMap};
 use std::sync::Arc;
 
-use chrono::{DateTime, Duration, TimeZone, Utc};
+use chrono::{DateTime, Duration, ParseError, TimeZone, Utc};
 
 use tokio;
 use tokio::fs::File;
@@ -48,16 +48,16 @@ struct FileReader {
 
 impl FileReader {
     async fn create_lines(stream: &StreamInfo) -> Lines<BufReader<ZstdDecoder<BufReader<File>>>> {
-        let f = File::open(stream.chat_file_path()).await.unwrap();
+        let f = File::open(stream.file_name.chat_file_path()).await.unwrap();
         let reader = BufReader::new(ZstdDecoder::new(BufReader::new(f)));
         reader.lines()
     }
 
-    fn parse_line(line: &str) -> Result<(DateTime<Utc>, &str), String> {
+    fn parse_line(line: &str) -> Result<(DateTime<Utc>, &str), ParseError> {
         let splitted: Vec<_> = line.splitn(2, ' ').collect();
 
         let date = match DateTime::parse_from_rfc3339(splitted[0]) {
-            Err(e) => return Err(e.to_string()),
+            Err(e) => return Err(e),
             Ok(d) => d.with_timezone(&Utc),
         };
 
