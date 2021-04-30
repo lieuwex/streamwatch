@@ -5,7 +5,11 @@
 mod chat_stream;
 mod create_preview;
 mod db;
+mod schema;
 mod types;
+
+#[macro_use]
+extern crate diesel;
 
 use std::collections::HashMap;
 use std::io;
@@ -15,6 +19,7 @@ use std::time::Instant;
 
 use crate::chat_stream::{cache_pruner, handle_chat_request};
 use crate::create_preview::*;
+use crate::schema::Game;
 use crate::types::*;
 
 use tokio;
@@ -29,6 +34,8 @@ use futures::StreamExt;
 use warp;
 use warp::Filter;
 use warp::Reply;
+
+use diesel::prelude::*;
 
 use rusqlite::params;
 
@@ -95,29 +102,32 @@ fn replace_persons(stream_id: i64, person_ids: Vec<i64>) -> impl warp::Reply {
     {
         let db = DB.get().unwrap();
         let db = db.lock().unwrap();
-        db.replace_persons(stream_id as u64, person_ids);
+        db.replace_persons(stream_id, person_ids);
     }
 
     warp::reply()
 }
 
-fn get_streams_progress(username: String) -> warp::reply::Response {
-    let map = {
+fn get_streams_progress(username_p: String) -> warp::reply::Response {
+    let map: HashMap<i64, f64> = {
         let db = DB.get().unwrap();
         let db = db.lock().unwrap();
 
-        let user_id = match db.get_userid_by_username(&username) {
-            None => {
-                return warp::reply::with_status(
-                    warp::reply(),
-                    warp::http::StatusCode::UNAUTHORIZED,
-                )
-                .into_response()
-            }
-            Some(id) => id,
-        };
+        use crate::schema::stream_progress::dsl::*;
+        use crate::schema::users::dsl::*;
 
-        db.get_streams_progress(user_id)
+        stream_progress
+            .select((stream_id, time))
+            .filter(
+                user_id.nullable().eq(users
+                    .filter(username.eq(username_p))
+                    .select(id)
+                    .single_value()),
+            )
+            .load(&db.conn2)
+            .unwrap()
+            .into_iter()
+            .collect()
     };
 
     warp::reply::with_status(warp::reply::json(&map), warp::http::StatusCode::FOUND).into_response()
@@ -388,6 +398,7 @@ async fn rescan_streams() -> Result<impl warp::Reply, warp::Rejection> {
                             return acc;
                         }
 
+                        let datapoint_timestamp = datapoint.timestamp;
                         let game = possible_games
                             .iter()
                             .find(|g| {
@@ -399,18 +410,23 @@ async fn rescan_streams() -> Result<impl warp::Reply, warp::Rejection> {
                             })
                             .cloned()
                             .unwrap_or_else(|| {
-                                let game = db.lock().unwrap().insert_possible_game(GameInfo {
+                                let game = db.lock().unwrap().insert_possible_game(Game {
                                     id: 0,
                                     name: datapoint.game.clone(),
                                     twitch_name: Some(datapoint.game),
                                     platform: None,
-                                    start_time: (datapoint.timestamp - timestamp).max(0) as f64,
                                 });
                                 possible_games.push(game.clone());
                                 game
                             });
 
-                        acc.push(game);
+                        acc.push(GameInfo {
+                            id: game.id,
+                            name: game.name,
+                            twitch_name: game.twitch_name,
+                            platform: game.platform,
+                            start_time: (datapoint_timestamp - timestamp).max(0) as f64,
+                        });
                         acc
                     });
                 let games = games
