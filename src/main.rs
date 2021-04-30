@@ -331,7 +331,7 @@ async fn rescan_streams() -> Result<impl warp::Reply, warp::Rejection> {
         m
     };
 
-    let possible_games = {
+    let mut possible_games = {
         let db = db.lock().unwrap();
         db.get_possible_games()
     };
@@ -399,14 +399,15 @@ async fn rescan_streams() -> Result<impl warp::Reply, warp::Rejection> {
                             })
                             .cloned()
                             .unwrap_or_else(|| {
-                                let db = db.lock().unwrap();
-                                db.insert_possible_game(GameInfo {
+                                let game = db.lock().unwrap().insert_possible_game(GameInfo {
                                     id: 0,
                                     name: datapoint.game.clone(),
                                     twitch_name: Some(datapoint.game),
                                     platform: None,
                                     start_time: (datapoint.timestamp - timestamp).max(0) as f64,
-                                })
+                                });
+                                possible_games.push(game.clone());
+                                game
                             });
 
                         acc.push(game);
