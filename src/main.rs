@@ -480,6 +480,7 @@ async fn rescan_streams() -> Result<impl warp::Reply, warp::Rejection> {
             }
             ItemState::Removed => {
                 println!("got removed item: {}", file_name);
+                all_unchanged = false;
 
                 let stream_id = db
                     .lock()
@@ -527,8 +528,7 @@ async fn main() -> io::Result<()> {
         };
     }
 
-    let db = db::Database::new();
-    okky!(DB, db.clone());
+    okky!(DB, db::Database::new());
 
     let (sender, receiver) = sync::mpsc::channel(1);
     let receiver = Arc::new(sync::Mutex::new(receiver));

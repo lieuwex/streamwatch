@@ -164,7 +164,7 @@ pub async fn cache_pruner() {
 pub async fn handle_chat_request(
     stream_id: i64,
     request: Request,
-) -> Result<String, warp::Rejection> {
+) -> Result<warp::reply::Json, warp::Rejection> {
     let (session_token, start, end) = {
         let start = Utc.timestamp_millis(request.start);
         let end = Utc.timestamp_millis(request.end);
@@ -222,10 +222,8 @@ pub async fn handle_chat_request(
         }
     };
 
-    let s = serde_json::to_string(&Response {
+    Ok(warp::reply::json(&Response {
         session_token,
         res: messages,
-    })
-    .unwrap();
-    Ok(s)
+    }))
 }
