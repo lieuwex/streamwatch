@@ -19,7 +19,6 @@ warp = { version = "0.3", features = ["compression"] }
 async-compression = { version = "0.3.7", features = ["zstd", "tokio"] }
 
 rusqlite = "0.24.2"
-diesel = { version = "1.4.4", features = ["sqlite", "chrono", "serde_json"] }
 
 once_cell = "1.4.0"
 
