@@ -193,8 +193,11 @@ pub async fn handle_chat_request(
 
                 let stream = match {
                     let db = DB.get().unwrap();
-                    let db = db.lock().unwrap();
-                    db.get_streams().into_iter().find(|s| s.id == stream_id)
+                    let mut db = db.lock().await;
+                    db.get_streams()
+                        .await
+                        .into_iter()
+                        .find(|s| s.id == stream_id)
                 } {
                     None => return Err(warp::reject::not_found()),
                     Some(s) => s,

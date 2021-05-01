@@ -8,9 +8,10 @@ mod db;
 mod types;
 
 use std::collections::HashMap;
+use std::convert::Infallible;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Instant;
 
 use crate::chat_stream::{cache_pruner, handle_chat_request};
@@ -24,13 +25,11 @@ use tokio_stream::wrappers::ReadDirStream;
 
 use regex::Regex;
 
-use futures::StreamExt;
+use futures::{stream::iter, StreamExt};
 
 use warp;
 use warp::Filter;
 use warp::Reply;
-
-use rusqlite::params;
 
 use once_cell::sync::{Lazy, OnceCell};
 
@@ -41,7 +40,7 @@ pub static FILE_STEM_REGEX_DATETIME: Lazy<Regex> =
 pub static FILE_STEM_REGEX_DATE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^\d{4}-\d{2}-\d{2}").unwrap());
 
-pub static DB: OnceCell<Arc<Mutex<db::Database>>> = OnceCell::new();
+pub static DB: OnceCell<Arc<tokio::sync::Mutex<db::Database>>> = OnceCell::new();
 static SENDER: OnceCell<tokio::sync::mpsc::Sender<Job>> = OnceCell::new();
 pub static STREAMS_DIR: &'static str = "/streams/lekkerspelen";
 
@@ -71,99 +70,111 @@ enum Job {
     Thumbnails { stream_id: i64, path: PathBuf },
 }
 
-fn streams() -> impl warp::Reply {
+async fn streams() -> Result<warp::reply::Json, Infallible> {
     let streams = {
         let db = DB.get().unwrap();
-        let db = db.lock().unwrap();
-        db.get_streams()
+        let mut db = db.lock().await;
+        db.get_streams().await
     };
 
-    warp::reply::json(&streams)
+    Ok(warp::reply::json(&streams))
 }
 
-fn replace_games(stream_id: i64, items: Vec<GameItem>) -> impl warp::Reply {
+async fn replace_games(
+    stream_id: i64,
+    items: Vec<GameItem>,
+) -> Result<warp::reply::Response, Infallible> {
     {
         let db = DB.get().unwrap();
-        let db = db.lock().unwrap();
-        db.replace_games(stream_id, items);
+        let mut db = db.lock().await;
+        db.replace_games(stream_id, items).await;
     }
 
-    warp::reply()
+    Ok(warp::reply().into_response())
 }
 
-fn replace_persons(stream_id: i64, person_ids: Vec<i64>) -> impl warp::Reply {
+async fn replace_persons(
+    stream_id: i64,
+    person_ids: Vec<i64>,
+) -> Result<warp::reply::Response, Infallible> {
     {
         let db = DB.get().unwrap();
-        let db = db.lock().unwrap();
-        db.replace_persons(stream_id as u64, person_ids);
+        let mut db = db.lock().await;
+        db.replace_persons(stream_id, person_ids).await;
     }
 
-    warp::reply()
+    Ok(warp::reply().into_response())
 }
 
-fn get_streams_progress(username: String) -> warp::reply::Response {
+async fn get_streams_progress(username: String) -> Result<warp::reply::Response, Infallible> {
     let map = {
         let db = DB.get().unwrap();
-        let db = db.lock().unwrap();
+        let mut db = db.lock().await;
 
-        let user_id = match db.get_userid_by_username(&username) {
+        let user_id = match db.get_userid_by_username(&username).await {
             None => {
-                return warp::reply::with_status(
+                return Ok(warp::reply::with_status(
                     warp::reply(),
                     warp::http::StatusCode::UNAUTHORIZED,
                 )
-                .into_response()
+                .into_response())
             }
             Some(id) => id,
         };
 
-        db.get_streams_progress(user_id)
+        db.get_streams_progress(user_id).await
     };
 
-    warp::reply::with_status(warp::reply::json(&map), warp::http::StatusCode::FOUND).into_response()
+    Ok(
+        warp::reply::with_status(warp::reply::json(&map), warp::http::StatusCode::FOUND)
+            .into_response(),
+    )
 }
-fn set_streams_progress(username: String, progress: HashMap<i64, f64>) -> impl warp::Reply {
+async fn set_streams_progress(
+    username: String,
+    progress: HashMap<i64, f64>,
+) -> Result<warp::reply::Response, Infallible> {
     {
         let db = DB.get().unwrap();
-        let db = db.lock().unwrap();
+        let mut db = db.lock().await;
 
-        let user_id = match db.get_userid_by_username(&username) {
+        let user_id = match db.get_userid_by_username(&username).await {
             None => {
-                return warp::reply::with_status(
+                return Ok(warp::reply::with_status(
                     warp::reply(),
                     warp::http::StatusCode::UNAUTHORIZED,
                 )
-                .into_response()
+                .into_response())
             }
             Some(id) => id,
         };
 
-        db.update_streams_progress(user_id, progress)
+        db.update_streams_progress(user_id, progress).await;
     }
 
-    warp::reply().into_response()
+    Ok(warp::reply().into_response())
 }
 
-fn get_possible_games() -> impl warp::Reply {
+async fn get_possible_games() -> Result<warp::reply::Json, Infallible> {
     let possible_games = {
         let db = DB.get().unwrap();
-        let db = db.lock().unwrap();
+        let mut db = db.lock().await;
 
-        db.get_possible_games()
+        db.get_possible_games().await
     };
 
-    warp::reply::json(&possible_games)
+    Ok(warp::reply::json(&possible_games))
 }
 
-fn get_possible_persons() -> impl warp::Reply {
+async fn get_possible_persons() -> Result<warp::reply::Json, Infallible> {
     let possible_persons = {
         let db = DB.get().unwrap();
-        let db = db.lock().unwrap();
+        let mut db = db.lock().await;
 
-        db.get_possible_persons()
+        db.get_possible_persons().await
     };
 
-    warp::reply::json(&possible_persons)
+    Ok(warp::reply::json(&possible_persons))
 }
 
 #[derive(PartialEq, Eq)]
@@ -186,13 +197,14 @@ async fn make_preview(stream_id: i64, path: PathBuf) {
         .unwrap();
 
     let db = DB.get().unwrap();
-    let db = db.lock().unwrap();
-    db.conn
-        .execute(
-            "INSERT INTO stream_previews(stream_id) values(?1)",
-            params![stream_id],
-        )
-        .unwrap();
+    let mut db = db.lock().await;
+    sqlx::query!(
+        "INSERT INTO stream_previews(stream_id) values(?1)",
+        stream_id
+    )
+    .execute(&mut db.conn)
+    .await
+    .unwrap();
 
     println!("[{}] made preview in {:?}", stream_id, start.elapsed());
 }
@@ -210,15 +222,18 @@ async fn make_thumbnails(stream_id: i64, path: PathBuf) {
         .unwrap();
 
     let db = DB.get().unwrap();
-    let db = db.lock().unwrap();
+    let mut db = db.lock().await;
 
     for (i, _) in items.iter().enumerate() {
-        db.conn
-            .execute(
-                "INSERT INTO stream_thumbnails(stream_id, thumb_index) values(?1, ?2)",
-                params![stream_id, i as i32],
-            )
-            .unwrap();
+        let i = i as i64;
+        sqlx::query!(
+            "INSERT INTO stream_thumbnails(stream_id, thumb_index) values(?1, ?2)",
+            stream_id,
+            i
+        )
+        .execute(&mut db.conn)
+        .await
+        .unwrap();
     }
 
     println!(
@@ -232,22 +247,24 @@ async fn make_thumbnails(stream_id: i64, path: PathBuf) {
 pub async fn remove_thumbnails_and_preview(stream_id: i64) {
     {
         let db = DB.get().unwrap();
-        let db = db.lock().unwrap();
+        let mut db = db.lock().await;
 
         // remove preview
-        db.conn
-            .execute(
-                "DELETE FROM stream_previews WHERE stream_id = ?1",
-                params![stream_id],
-            )
-            .unwrap();
+        sqlx::query!(
+            "DELETE FROM stream_previews WHERE stream_id = ?1",
+            stream_id,
+        )
+        .execute(&mut db.conn)
+        .await
+        .unwrap();
         // remove thumbnails
-        db.conn
-            .execute(
-                "DELETE FROM stream_thumbnails WHERE stream_id = ?1",
-                params![stream_id],
-            )
-            .unwrap();
+        sqlx::query!(
+            "DELETE FROM stream_thumbnails WHERE stream_id = ?1",
+            stream_id,
+        )
+        .execute(&mut db.conn)
+        .await
+        .unwrap();
     }
 
     log_err!(remove_file(get_preview_path(stream_id)).await);
@@ -276,8 +293,9 @@ async fn rescan_streams() -> Result<impl warp::Reply, warp::Rejection> {
 
     let file_name_states = {
         let db_map: HashMap<String, u64> = {
-            let db = db.lock().unwrap();
+            let mut db = db.lock().await;
             db.get_streams()
+                .await
                 .into_iter()
                 .map(|stream| (stream.file_name.into_string(), stream.file_size))
                 .collect()
@@ -332,8 +350,8 @@ async fn rescan_streams() -> Result<impl warp::Reply, warp::Rejection> {
     };
 
     let mut possible_games = {
-        let db = db.lock().unwrap();
-        db.get_possible_games()
+        let mut db = db.lock().await;
+        db.get_possible_games().await
     };
 
     let mut all_unchanged = true;
@@ -363,64 +381,87 @@ async fn rescan_streams() -> Result<impl warp::Reply, warp::Rejection> {
                 };
 
                 let stream_id: i64 = {
-                    let db = db.lock().unwrap();
-                    db.conn.execute(
-                            "INSERT INTO streams(filename, filesize, ts, duration) values(?1, ?2, ?3, ?4)",
-                            params![file_name, file_size as i64, timestamp, duration as f64],
-                        )
-                        .unwrap();
-                    db.conn.last_insert_rowid()
+                    let mut db = db.lock().await;
+
+                    let file_size = file_size as i64;
+                    let duration = duration as f64;
+                    sqlx::query!("INSERT INTO streams(filename, filesize, ts, duration) values(?1, ?2, ?3, ?4)", file_name, file_size, timestamp, duration)
+                        .execute(&mut db.conn)
+                        .await
+                        .unwrap().last_insert_rowid()
                 };
 
+                struct FoldState<'a> {
+                    games: Vec<GameInfo>,
+                    possible_games: &'a mut Vec<GameInfo>,
+                }
+
                 let file_name = StreamFileName::from_string(file_name);
-                let games: Vec<GameInfo> = file_name
-                    .get_extra_info()
-                    .map(|(datapoints, _)| datapoints)
-                    .into_iter()
-                    .flatten()
-                    .filter(|datapoint| !datapoint.game.is_empty())
-                    .fold(vec![], |mut acc, datapoint| {
-                        let last_item_same_game = acc
-                            .last()
-                            .map(|x| x.twitch_name.as_ref().unwrap() == &datapoint.game)
-                            .unwrap_or(false);
-                        if last_item_same_game {
-                            return acc;
-                        }
-
-                        let game = possible_games
-                            .iter()
-                            .find(|g| {
-                                if let Some(twitch_name) = &g.twitch_name {
-                                    twitch_name == &datapoint.game
-                                } else {
-                                    false
+                let games: Vec<GameItem> =
+                    iter(file_name.get_extra_info().map(|(datapoints, _)| datapoints))
+                        .map(iter)
+                        .flatten()
+                        .filter(|datapoint| std::future::ready(!datapoint.game.is_empty()))
+                        .fold(
+                            FoldState {
+                                games: vec![],
+                                possible_games: &mut possible_games,
+                            },
+                            |mut state: FoldState<'_>, datapoint| async {
+                                let last_item_same_game = state
+                                    .games
+                                    .last()
+                                    .map(|x| x.twitch_name.as_ref().unwrap() == &datapoint.game)
+                                    .unwrap_or(false);
+                                if last_item_same_game {
+                                    return state;
                                 }
-                            })
-                            .cloned()
-                            .unwrap_or_else(|| {
-                                let game = db.lock().unwrap().insert_possible_game(GameInfo {
-                                    id: 0,
-                                    name: datapoint.game.clone(),
-                                    twitch_name: Some(datapoint.game),
-                                    platform: None,
-                                    start_time: (datapoint.timestamp - timestamp).max(0) as f64,
-                                });
-                                possible_games.push(game.clone());
-                                game
-                            });
 
-                        acc.push(game);
-                        acc
-                    });
-                let games = games
-                    .into_iter()
-                    .map(|g| GameItem {
-                        id: g.id,
-                        start_time: g.start_time,
-                    })
-                    .collect();
-                db.lock().unwrap().replace_games(stream_id, games);
+                                let game = state
+                                    .possible_games
+                                    .iter()
+                                    .find(|g| {
+                                        if let Some(twitch_name) = &g.twitch_name {
+                                            twitch_name == &datapoint.game
+                                        } else {
+                                            false
+                                        }
+                                    })
+                                    .cloned();
+
+                                let game = match game {
+                                    Some(g) => g,
+                                    None => {
+                                        let game = db
+                                            .lock()
+                                            .await
+                                            .insert_possible_game(GameInfo {
+                                                id: 0,
+                                                name: datapoint.game.clone(),
+                                                twitch_name: Some(datapoint.game),
+                                                platform: None,
+                                                start_time: (datapoint.timestamp - timestamp).max(0)
+                                                    as f64,
+                                            })
+                                            .await;
+                                        state.possible_games.push(game.clone());
+                                        game
+                                    }
+                                };
+
+                                state.games.push(game);
+                                state
+                            },
+                        )
+                        .await
+                        .games
+                        .into_iter()
+                        .map(|g| GameItem {
+                            id: g.id,
+                            start_time: g.start_time,
+                        })
+                        .collect();
+                db.lock().await.replace_games(stream_id, games).await;
 
                 sender
                     .send(Job::Thumbnails {
@@ -436,17 +477,20 @@ async fn rescan_streams() -> Result<impl warp::Reply, warp::Rejection> {
                 all_unchanged = false;
 
                 let stream_id = {
-                    let db = db.lock().unwrap();
+                    let mut db = db.lock().await;
 
-                    let stream_id = db.get_stream_id_by_filename(&file_name).unwrap();
+                    let file_size = file_size as i64;
+                    let stream_id = db.get_stream_id_by_filename(&file_name).await.unwrap();
 
                     // update filesize
-                    db.conn
-                        .execute(
-                            "UPDATE streams SET filesize = ?1 WHERE id = ?2",
-                            params![file_size as i64, stream_id],
-                        )
-                        .unwrap();
+                    sqlx::query!(
+                        "UPDATE streams SET filesize = ?1 WHERE id = ?2",
+                        file_size,
+                        stream_id
+                    )
+                    .execute(&mut db.conn)
+                    .await
+                    .unwrap();
 
                     stream_id
                 };
@@ -468,11 +512,12 @@ async fn rescan_streams() -> Result<impl warp::Reply, warp::Rejection> {
 
                 let stream_id = db
                     .lock()
-                    .unwrap()
+                    .await
                     .get_stream_id_by_filename(&file_name)
+                    .await
                     .unwrap();
                 remove_thumbnails_and_preview(stream_id).await;
-                db.lock().unwrap().remove_stream(stream_id);
+                db.lock().await.remove_stream(stream_id).await;
             }
         }
     }
@@ -512,7 +557,7 @@ async fn main() -> io::Result<()> {
         };
     }
 
-    okky!(DB, db::Database::new());
+    okky!(DB, db::Database::new().await);
 
     let (sender, receiver) = sync::mpsc::channel(1);
     let receiver = Arc::new(sync::Mutex::new(receiver));
@@ -532,24 +577,24 @@ async fn main() -> io::Result<()> {
     warp::serve({
         let cors = warp::cors().allow_any_origin();
 
-        let compressed = (warp::get().and(warp::path!("streams")).map(streams))
+        let compressed = (warp::get().and(warp::path!("streams")).and_then(streams))
             .or(warp::patch()
                 .and(warp::path!("streams"))
                 .and_then(rescan_streams))
             .or(warp::get()
                 .and(warp::path!("persons"))
-                .map(get_possible_persons))
+                .and_then(get_possible_persons))
             .or(warp::get()
                 .and(warp::path!("games"))
-                .map(get_possible_games))
+                .and_then(get_possible_games))
             .or(warp::put()
                 .and(warp::path!("stream" / i64 / "games"))
                 .and(warp::body::json())
-                .map(replace_games))
+                .and_then(replace_games))
             .or(warp::put()
                 .and(warp::path!("stream" / i64 / "persons"))
                 .and(warp::body::json())
-                .map(replace_persons))
+                .and_then(replace_persons))
             .or(warp::get()
                 .and(warp::path!("stream" / i64 / "chat"))
                 .and(warp::query())
@@ -557,10 +602,10 @@ async fn main() -> io::Result<()> {
             .or(warp::put()
                 .and(warp::path!("user" / String / "progress"))
                 .and(warp::body::json())
-                .map(set_streams_progress))
+                .and_then(set_streams_progress))
             .or(warp::get()
                 .and(warp::path!("user" / String / "progress"))
-                .map(get_streams_progress))
+                .and_then(get_streams_progress))
             .or(warp::path("video").and(warp::fs::file("./build/index.html")))
             .or(warp::path("login").and(warp::fs::file("./build/index.html")))
             .or(warp::path("static").and(warp::fs::dir("./build/static")))
