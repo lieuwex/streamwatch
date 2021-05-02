@@ -18,6 +18,8 @@ impl Database {
     }
 
     pub async fn get_streams(&mut self) -> Vec<StreamInfo> {
+        let mut tx = self.conn.begin().await.unwrap();
+
         let mut streams = sqlx::query!("SELECT id,filename,filesize,ts,duration,(SELECT COUNT(*) FROM stream_previews WHERE stream_id = id) as preview_count,(SELECT COUNT(*) FROM stream_thumbnails WHERE stream_id  = id) as thumbnail_count FROM streams")
             .map(|row| {
                 StreamInfo {
@@ -37,7 +39,7 @@ impl Database {
                     jumpcuts: vec![],
                 }
             })
-            .fetch_all(&mut self.conn)
+            .fetch_all(&mut tx)
             .await
             .unwrap();
 
@@ -52,7 +54,7 @@ impl Database {
                         start_time: row.start_time as f64,
                     }
                 })
-                .fetch_all(&mut self.conn)
+                .fetch_all(&mut tx)
                 .await
                 .unwrap();
 
@@ -61,7 +63,7 @@ impl Database {
                     id: row.person_id,
                     name: row.name,
                 })
-                .fetch_all(&mut self.conn)
+                .fetch_all(&mut tx)
                 .await
                 .unwrap();
 
@@ -71,6 +73,8 @@ impl Database {
                 (stream.datapoints, stream.jumpcuts) = res;
             }
         }
+
+        tx.commit().await.unwrap();
 
         streams
     }
@@ -118,8 +122,10 @@ impl Database {
     }
 
     pub async fn replace_games(&mut self, stream_id: i64, items: Vec<GameItem>) {
+        let mut tx = self.conn.begin().await.unwrap();
+
         sqlx::query!("DELETE FROM game_features WHERE stream_id = ?1", stream_id)
-            .execute(&mut self.conn)
+            .execute(&mut tx)
             .await
             .unwrap();
 
@@ -130,10 +136,12 @@ impl Database {
                 item.id,
                 item.start_time
             )
-            .execute(&mut self.conn)
+            .execute(&mut tx)
             .await
             .unwrap();
         }
+
+        tx.commit().await.unwrap();
     }
 
     pub async fn get_possible_persons(&mut self) -> Vec<PersonInfo> {
@@ -143,11 +151,13 @@ impl Database {
             .unwrap()
     }
     pub async fn replace_persons(&mut self, stream_id: i64, person_ids: Vec<i64>) {
+        let mut tx = self.conn.begin().await.unwrap();
+
         sqlx::query!(
             "DELETE FROM person_participations WHERE stream_id = ?1",
             stream_id
         )
-        .execute(&mut self.conn)
+        .execute(&mut tx)
         .await
         .unwrap();
 
@@ -157,10 +167,12 @@ impl Database {
                 stream_id,
                 id
             )
-            .execute(&mut self.conn)
+            .execute(&mut tx)
             .await
             .unwrap();
         }
+
+        tx.commit().await.unwrap();
     }
 
     pub async fn get_userid_by_username(&mut self, username: &str) -> Option<i64> {
@@ -185,11 +197,15 @@ impl Database {
     }
 
     pub async fn update_streams_progress(&mut self, user_id: i64, progress: HashMap<i64, f64>) {
+        let mut tx = self.conn.begin().await.unwrap();
+
         for (stream_id, time) in progress {
             sqlx::query!("INSERT INTO stream_progress(user_id, stream_id, time) VALUES(?1, ?2, ?3) ON CONFLICT DO UPDATE SET time = ?3", user_id, stream_id, time)
-            .execute(&mut self.conn)
+            .execute(&mut tx)
             .await
             .unwrap();
         }
+
+        tx.commit().await.unwrap();
     }
 }

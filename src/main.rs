@@ -35,6 +35,8 @@ use once_cell::sync::{Lazy, OnceCell};
 
 use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, TimeZone};
 
+use sqlx::Connection;
+
 pub static FILE_STEM_REGEX_DATETIME: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}").unwrap());
 pub static FILE_STEM_REGEX_DATE: Lazy<Regex> =
@@ -223,6 +225,7 @@ async fn make_thumbnails(stream_id: i64, path: PathBuf) {
 
     let db = DB.get().unwrap();
     let mut db = db.lock().await;
+    let mut tx = db.conn.begin().await.unwrap();
 
     for (i, _) in items.iter().enumerate() {
         let i = i as i64;
@@ -231,10 +234,12 @@ async fn make_thumbnails(stream_id: i64, path: PathBuf) {
             stream_id,
             i
         )
-        .execute(&mut db.conn)
+        .execute(&mut tx)
         .await
         .unwrap();
     }
+
+    tx.commit().await.unwrap();
 
     println!(
         "[{}] made {} thumbnails in {:?}",
@@ -249,12 +254,14 @@ pub async fn remove_thumbnails_and_preview(stream_id: i64) {
         let db = DB.get().unwrap();
         let mut db = db.lock().await;
 
+        let mut tx = db.conn.begin().await.unwrap();
+
         // remove preview
         sqlx::query!(
             "DELETE FROM stream_previews WHERE stream_id = ?1",
             stream_id,
         )
-        .execute(&mut db.conn)
+        .execute(&mut tx)
         .await
         .unwrap();
         // remove thumbnails
@@ -262,9 +269,11 @@ pub async fn remove_thumbnails_and_preview(stream_id: i64) {
             "DELETE FROM stream_thumbnails WHERE stream_id = ?1",
             stream_id,
         )
-        .execute(&mut db.conn)
+        .execute(&mut tx)
         .await
         .unwrap();
+
+        tx.commit().await.unwrap();
     }
 
     log_err!(remove_file(get_preview_path(stream_id)).await);
