@@ -284,11 +284,11 @@ fn parse_filename(path_buf: &PathBuf) -> Option<DateTime<Local>> {
     let stem = path_buf.file_stem().unwrap().to_str().unwrap();
 
     let naive_datetime = FILE_STEM_REGEX_DATETIME
-        .find(&stem)
+        .find(stem)
         .and_then(|m| NaiveDateTime::parse_from_str(m.as_str(), "%Y-%m-%d %H:%M:%S").ok())
         .or_else(|| {
             FILE_STEM_REGEX_DATE
-                .find(&stem)
+                .find(stem)
                 .and_then(|m| NaiveDate::parse_from_str(m.as_str(), "%Y-%m-%d").ok())
                 .map(|d| d.and_hms(0, 0, 0))
         })?;
@@ -622,8 +622,7 @@ async fn main() -> io::Result<()> {
             .or(warp::path::end().and(warp::fs::dir("./build")))
             .with(warp::compression::gzip());
 
-        let uncompressed = warp::path("stream")
-            .and(warp::fs::dir(STREAMS_DIR))
+        let uncompressed = (warp::path("stream").and(warp::fs::dir(STREAMS_DIR)))
             .or(warp::path("preview").and(warp::fs::dir("./previews")))
             .or(warp::path("thumbnail").and(warp::fs::dir("./thumbnails")));
 
