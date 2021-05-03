@@ -5,8 +5,6 @@ use chrono::{DateTime, TimeZone, Utc};
 
 use serde::{Deserialize, Serialize};
 
-use serde_yaml;
-
 use super::STREAMS_DIR;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -98,6 +96,11 @@ pub struct StreamInfo {
 }
 
 impl StreamInfo {
+    pub fn preview_path(id: i64) -> PathBuf {
+        Path::new("./previews")
+            .join(id.to_string())
+            .join("preview.webm")
+    }
     pub fn preview_url(&self) -> Option<String> {
         if self.has_preview {
             Some(format!("/preview/{}/preview.webm", self.id))
@@ -106,6 +109,9 @@ impl StreamInfo {
         }
     }
 
+    pub fn thumbnails_path(id: i64) -> PathBuf {
+        Path::new("./thumbnails").join(id.to_string())
+    }
     pub fn thumbnail_urls(&self) -> Vec<String> {
         (0..self.thumbnail_count)
             .map(|i| format!("/thumbnail/{}/{}.webp", self.id, i))

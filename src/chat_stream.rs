@@ -6,7 +6,6 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Duration, ParseError, TimeZone, Utc};
 
-use tokio;
 use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, BufReader, Lines};
 use tokio::sync::Mutex;
@@ -169,7 +168,7 @@ pub async fn handle_chat_request(
         let start = Utc.timestamp_millis(request.start);
         let end = Utc.timestamp_millis(request.end);
 
-        let session_token = request.session_token.unwrap_or_else(|| Uuid::new_v4());
+        let session_token = request.session_token.unwrap_or_else(Uuid::new_v4);
 
         (session_token, start, end)
     };
