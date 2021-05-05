@@ -118,6 +118,7 @@ pub async fn scan_streams() -> Result<(), Infallible> {
         let mut m: HashMap<String, (u64, ItemState)> = HashMap::new();
 
         for dir_file in &dir_map {
+            // HACK
             if !(dir_file.0.ends_with(".mp4")
                 || dir_file.0.ends_with(".mkv")
                 || dir_file.0.ends_with(".webm"))

@@ -6,7 +6,18 @@ use crate::{DB, STREAMS_DIR};
 use std::collections::HashMap;
 use std::convert::Infallible;
 
+use warp::http::StatusCode;
 use warp::{Filter, Reply};
+
+macro_rules! reply_status {
+    ($reply:expr, $code:expr) => {
+        warp::reply::with_status($reply, $code).into_response()
+    };
+
+    ($code:expr) => {
+        reply_status!(warp::reply(), $code)
+    };
+}
 
 async fn streams() -> Result<warp::reply::Json, Infallible> {
     let streams = {
@@ -50,23 +61,14 @@ async fn get_streams_progress(username: String) -> Result<warp::reply::Response,
         let mut db = db.lock().await;
 
         let user_id = match db.get_userid_by_username(&username).await {
-            None => {
-                return Ok(warp::reply::with_status(
-                    warp::reply(),
-                    warp::http::StatusCode::UNAUTHORIZED,
-                )
-                .into_response())
-            }
+            None => return Ok(reply_status!(StatusCode::UNAUTHORIZED)),
             Some(id) => id,
         };
 
         db.get_streams_progress(user_id).await
     };
 
-    Ok(
-        warp::reply::with_status(warp::reply::json(&map), warp::http::StatusCode::FOUND)
-            .into_response(),
-    )
+    Ok(reply_status!(warp::reply::json(&map), StatusCode::FOUND))
 }
 async fn set_streams_progress(
     username: String,
@@ -77,13 +79,7 @@ async fn set_streams_progress(
         let mut db = db.lock().await;
 
         let user_id = match db.get_userid_by_username(&username).await {
-            None => {
-                return Ok(warp::reply::with_status(
-                    warp::reply(),
-                    warp::http::StatusCode::UNAUTHORIZED,
-                )
-                .into_response())
-            }
+            None => return Ok(reply_status!(StatusCode::UNAUTHORIZED)),
             Some(id) => id,
         };
 
@@ -115,8 +111,8 @@ async fn get_possible_persons() -> Result<warp::reply::Json, Infallible> {
     Ok(warp::reply::json(&possible_persons))
 }
 
-async fn rescan_streams() -> Result<impl warp::Reply, warp::Rejection> {
-    scan_streams().await.unwrap();
+async fn rescan_streams() -> Result<impl warp::Reply, Infallible> {
+    scan_streams().await?;
     Ok(warp::reply())
 }
 

@@ -8,16 +8,14 @@ mod db;
 mod job_handler;
 mod scan;
 mod types;
+mod util;
 mod web;
 
 use std::io;
-
 use std::sync::Arc;
 
 use crate::chat_stream::cache_pruner;
-
 use crate::job_handler::spawn_jobs;
-
 use crate::web::run_server;
 
 use once_cell::sync::OnceCell;
@@ -29,15 +27,6 @@ pub static DB: OnceCell<Arc<tokio::sync::Mutex<db::Database>>> = OnceCell::new()
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
-    macro_rules! okky {
-        ($cell:expr, $item:expr) => {
-            match $cell.set($item) {
-                Ok(_) => {}
-                Err(_) => panic!("oncecell already full"),
-            }
-        };
-    }
-
     okky!(DB, db::Database::new().await);
 
     spawn_jobs(PREVIEW_WORKERS);

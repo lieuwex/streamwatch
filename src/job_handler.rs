@@ -4,8 +4,7 @@ use std::time::Instant;
 
 use crate::create_preview::*;
 use crate::types::*;
-
-use crate::DB;
+use crate::{okky, DB};
 
 use tokio::sync;
 
@@ -101,15 +100,6 @@ async fn job_watcher(receiver: Arc<sync::Mutex<sync::mpsc::Receiver<Job>>>) {
 }
 
 pub fn spawn_jobs(count: usize) {
-    macro_rules! okky {
-        ($cell:expr, $item:expr) => {
-            match $cell.set($item) {
-                Ok(_) => {}
-                Err(_) => panic!("oncecell already full"),
-            }
-        };
-    }
-
     let (sender, receiver) = sync::mpsc::channel(1);
     let receiver = Arc::new(sync::Mutex::new(receiver));
     okky!(SENDER, sender);
