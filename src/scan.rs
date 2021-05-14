@@ -81,6 +81,175 @@ fn parse_filename(path: &Path) -> Option<DateTime<Local>> {
     Some(Local.from_local_datetime(&naive_datetime).unwrap())
 }
 
+async fn handle_new_stream(
+    path: &Path,
+    file_name: String,
+    file_size: i64,
+    possible_games: &mut Vec<GameInfo>,
+) {
+    let db = DB.get().unwrap();
+    let sender = SENDER.get().unwrap();
+
+    let timestamp = match parse_filename(path) {
+        Some(date) => date.timestamp(),
+        None => {
+            eprintln!("error parsing timestamp for {:?}", path);
+            0
+        }
+    };
+
+    let duration = match get_video_duration_in_secs(path).await {
+        Ok(d) => d,
+        Err(_) => {
+            eprintln!("error getting duration for: {:?}", path);
+            return;
+        }
+    };
+
+    let stream_id: i64 = {
+        let mut db = db.lock().await;
+
+        let duration = duration as f64;
+        sqlx::query!(
+            "INSERT INTO streams(filename, filesize, ts, duration) values(?1, ?2, ?3, ?4)",
+            file_name,
+            file_size,
+            timestamp,
+            duration
+        )
+        .execute(&mut db.conn)
+        .await
+        .unwrap()
+        .last_insert_rowid()
+    };
+
+    struct FoldState<'a> {
+        games: Vec<GameInfo>,
+        possible_games: &'a mut Vec<GameInfo>,
+    }
+
+    let file_name: StreamFileName = file_name.into();
+    let games: Vec<GameItem> = iter(file_name.get_extra_info().map(|(datapoints, _)| datapoints))
+        .map(iter)
+        .flatten()
+        .filter(|datapoint| std::future::ready(!datapoint.game.is_empty()))
+        .fold(
+            FoldState {
+                games: vec![],
+                possible_games,
+            },
+            |mut state: FoldState<'_>, datapoint| async {
+                let last_item_same_game = state
+                    .games
+                    .last()
+                    .map(|x| x.twitch_name.as_ref().unwrap() == &datapoint.game)
+                    .unwrap_or(false);
+                if last_item_same_game {
+                    return state;
+                }
+
+                let game = state
+                    .possible_games
+                    .iter()
+                    .find(|g| {
+                        if let Some(twitch_name) = &g.twitch_name {
+                            twitch_name == &datapoint.game
+                        } else {
+                            false
+                        }
+                    })
+                    .cloned();
+
+                let game = match game {
+                    Some(g) => g,
+                    None => {
+                        let game = db
+                            .lock()
+                            .await
+                            .insert_possible_game(GameInfo {
+                                id: 0,
+                                name: datapoint.game.clone(),
+                                twitch_name: Some(datapoint.game),
+                                platform: None,
+                                start_time: (datapoint.timestamp - timestamp).max(0) as f64,
+                            })
+                            .await;
+                        state.possible_games.push(game.clone());
+                        game
+                    }
+                };
+
+                state.games.push(game);
+                state
+            },
+        )
+        .await
+        .games
+        .into_iter()
+        .map(|g| GameItem {
+            id: g.id,
+            start_time: g.start_time,
+        })
+        .collect();
+    db.lock().await.replace_games(stream_id, games).await;
+
+    sender
+        .send(Job::Thumbnails {
+            stream_id,
+            path: path.to_owned(),
+        })
+        .await
+        .unwrap();
+    sender
+        .send(Job::Preview {
+            stream_id,
+            path: path.to_owned(),
+        })
+        .await
+        .unwrap();
+}
+
+async fn handle_modified_stream(path: &Path, file_name: String, file_size: i64) {
+    let db = DB.get().unwrap();
+    let sender = SENDER.get().unwrap();
+
+    let stream_id = {
+        let mut db = db.lock().await;
+
+        let file_size = file_size as i64;
+        let stream_id = db.get_stream_id_by_filename(&file_name).await.unwrap();
+
+        // update filesize
+        sqlx::query!(
+            "UPDATE streams SET filesize = ?1 WHERE id = ?2",
+            file_size,
+            stream_id
+        )
+        .execute(&mut db.conn)
+        .await
+        .unwrap();
+
+        stream_id
+    };
+
+    remove_thumbnails_and_preview(stream_id).await;
+
+    sender
+        .send(Job::Thumbnails {
+            stream_id,
+            path: path.to_owned(),
+        })
+        .await
+        .unwrap();
+    sender
+        .send(Job::Preview {
+            stream_id,
+            path: path.to_owned(),
+        })
+        .await
+        .unwrap();
+}
+
 #[derive(PartialEq, Eq)]
 enum ItemState {
     Unchanged,
@@ -90,7 +259,6 @@ enum ItemState {
 }
 pub async fn scan_streams() -> Result<(), Infallible> {
     let db = DB.get().unwrap();
-    let sender = SENDER.get().unwrap();
 
     let file_name_states = {
         let db_map: HashMap<String, u64> = {
@@ -98,7 +266,7 @@ pub async fn scan_streams() -> Result<(), Infallible> {
             db.get_streams()
                 .await
                 .into_iter()
-                .map(|stream| (stream.file_name.into_string(), stream.file_size))
+                .map(|stream| (stream.file_name.into(), stream.file_size))
                 .collect()
         };
         let dir_map: HashMap<String, u64> = {
@@ -165,148 +333,13 @@ pub async fn scan_streams() -> Result<(), Infallible> {
             ItemState::New => {
                 println!("got new item: {}", file_name);
                 all_unchanged = false;
-
-                let timestamp = match parse_filename(&path) {
-                    Some(date) => date.timestamp(),
-                    None => {
-                        eprintln!("error parsing timestamp for {:?}", path);
-                        0
-                    }
-                };
-
-                let duration = match get_video_duration_in_secs(&path).await {
-                    Ok(d) => d,
-                    Err(_) => {
-                        eprintln!("error getting duration for: {:?}", path);
-                        continue;
-                    }
-                };
-
-                let stream_id: i64 = {
-                    let mut db = db.lock().await;
-
-                    let file_size = file_size as i64;
-                    let duration = duration as f64;
-                    sqlx::query!("INSERT INTO streams(filename, filesize, ts, duration) values(?1, ?2, ?3, ?4)", file_name, file_size, timestamp, duration)
-                    .execute(&mut db.conn)
-                    .await
-                    .unwrap().last_insert_rowid()
-                };
-
-                struct FoldState<'a> {
-                    games: Vec<GameInfo>,
-                    possible_games: &'a mut Vec<GameInfo>,
-                }
-
-                let file_name = StreamFileName::from_string(file_name);
-                let games: Vec<GameItem> =
-                    iter(file_name.get_extra_info().map(|(datapoints, _)| datapoints))
-                        .map(iter)
-                        .flatten()
-                        .filter(|datapoint| std::future::ready(!datapoint.game.is_empty()))
-                        .fold(
-                            FoldState {
-                                games: vec![],
-                                possible_games: &mut possible_games,
-                            },
-                            |mut state: FoldState<'_>, datapoint| async {
-                                let last_item_same_game = state
-                                    .games
-                                    .last()
-                                    .map(|x| x.twitch_name.as_ref().unwrap() == &datapoint.game)
-                                    .unwrap_or(false);
-                                if last_item_same_game {
-                                    return state;
-                                }
-
-                                let game = state
-                                    .possible_games
-                                    .iter()
-                                    .find(|g| {
-                                        if let Some(twitch_name) = &g.twitch_name {
-                                            twitch_name == &datapoint.game
-                                        } else {
-                                            false
-                                        }
-                                    })
-                                    .cloned();
-
-                                let game = match game {
-                                    Some(g) => g,
-                                    None => {
-                                        let game = db
-                                            .lock()
-                                            .await
-                                            .insert_possible_game(GameInfo {
-                                                id: 0,
-                                                name: datapoint.game.clone(),
-                                                twitch_name: Some(datapoint.game),
-                                                platform: None,
-                                                start_time: (datapoint.timestamp - timestamp).max(0)
-                                                    as f64,
-                                            })
-                                            .await;
-                                        state.possible_games.push(game.clone());
-                                        game
-                                    }
-                                };
-
-                                state.games.push(game);
-                                state
-                            },
-                        )
-                        .await
-                        .games
-                        .into_iter()
-                        .map(|g| GameItem {
-                            id: g.id,
-                            start_time: g.start_time,
-                        })
-                        .collect();
-                db.lock().await.replace_games(stream_id, games).await;
-
-                sender
-                    .send(Job::Thumbnails {
-                        stream_id,
-                        path: path.clone(),
-                    })
-                    .await
-                    .unwrap();
-                sender.send(Job::Preview { stream_id, path }).await.unwrap();
+                handle_new_stream(&path, file_name, file_size as i64, &mut possible_games).await;
             }
             ItemState::Modified => {
                 println!("got updated item: {}", file_name);
                 all_unchanged = false;
 
-                let stream_id = {
-                    let mut db = db.lock().await;
-
-                    let file_size = file_size as i64;
-                    let stream_id = db.get_stream_id_by_filename(&file_name).await.unwrap();
-
-                    // update filesize
-                    sqlx::query!(
-                        "UPDATE streams SET filesize = ?1 WHERE id = ?2",
-                        file_size,
-                        stream_id
-                    )
-                    .execute(&mut db.conn)
-                    .await
-                    .unwrap();
-
-                    stream_id
-                };
-
-                remove_thumbnails_and_preview(stream_id).await;
-
-                sender
-                    .send(Job::Thumbnails {
-                        stream_id,
-                        path: path.clone(),
-                    })
-                    .await
-                    .unwrap();
-                sender.send(Job::Preview { stream_id, path }).await.unwrap();
+                handle_modified_stream(&path, file_name, file_size as i64).await;
             }
             ItemState::Removed => {
                 println!("got removed item: {}", file_name);

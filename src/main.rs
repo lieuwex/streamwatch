@@ -1,8 +1,9 @@
 #![feature(iter_intersperse)]
 #![feature(hash_drain_filter)]
 #![feature(destructuring_assignment)]
+#![feature(pattern)]
 
-mod chat_stream;
+mod chat;
 mod create_preview;
 mod db;
 mod job_handler;
@@ -14,7 +15,7 @@ mod web;
 use std::io;
 use std::sync::Arc;
 
-use crate::chat_stream::cache_pruner;
+use crate::chat::cache_pruner;
 use crate::job_handler::spawn_jobs;
 use crate::web::run_server;
 

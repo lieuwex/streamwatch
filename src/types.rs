@@ -39,14 +39,6 @@ pub struct StreamJumpcut {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StreamFileName(String);
 impl StreamFileName {
-    pub fn from_string(s: String) -> Self {
-        Self(s)
-    }
-
-    pub fn into_string(self) -> String {
-        self.0
-    }
-
     pub fn chat_file_path(&self) -> PathBuf {
         let mut res = Path::new(STREAMS_DIR).join(&self.0);
         res.set_extension("txt.zst");
@@ -74,6 +66,18 @@ impl StreamFileName {
 
                 (datapoints, jumpcuts)
             })
+    }
+}
+
+impl From<String> for StreamFileName {
+    fn from(s: String) -> Self {
+        StreamFileName(s)
+    }
+}
+
+impl From<StreamFileName> for String {
+    fn from(s: StreamFileName) -> Self {
+        s.0
     }
 }
 

@@ -24,7 +24,7 @@ impl Database {
             .map(|row| {
                 StreamInfo {
                     id : row.id,
-                    file_name: StreamFileName::from_string(row.filename),
+                    file_name: row.filename.into(),
                     file_size: row.filesize as u64,
                     timestamp: row.ts,
                     duration: row.duration as f64,

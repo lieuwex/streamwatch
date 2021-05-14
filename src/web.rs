@@ -1,4 +1,4 @@
-use crate::chat_stream::handle_chat_request;
+use crate::chat::handle_chat_request;
 use crate::scan::scan_streams;
 use crate::types::*;
 use crate::{DB, STREAMS_DIR};
