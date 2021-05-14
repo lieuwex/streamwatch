@@ -14,7 +14,7 @@ pub struct Database {
 impl Database {
     pub async fn new() -> Arc<Mutex<Self>> {
         let conn = SqliteConnection::connect("sqlite:./db.db").await.unwrap();
-        Arc::new(Mutex::new(Database { conn }))
+        Arc::new(Mutex::new(Self { conn }))
     }
 
     pub async fn get_streams(&mut self) -> Vec<StreamInfo> {

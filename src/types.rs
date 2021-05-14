@@ -71,7 +71,7 @@ impl StreamFileName {
 
 impl From<String> for StreamFileName {
     fn from(s: String) -> Self {
-        StreamFileName(s)
+        Self(s)
     }
 }
 
