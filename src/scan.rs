@@ -1,6 +1,6 @@
 use crate::create_preview::get_video_duration_in_secs;
 use crate::job_handler::{Job, SENDER};
-use crate::types::*;
+use crate::types::{GameInfo, GameItem, StreamFileName, StreamInfo};
 use crate::{DB, STREAMS_DIR};
 
 use std::collections::HashMap;
@@ -109,7 +109,7 @@ async fn handle_new_stream(
     let stream_id: i64 = {
         let mut db = db.lock().await;
 
-        let duration = duration as f64;
+        let duration = f64::from(duration);
         sqlx::query!(
             "INSERT INTO streams(filename, filesize, ts, duration) values(?1, ?2, ?3, ?4)",
             file_name,

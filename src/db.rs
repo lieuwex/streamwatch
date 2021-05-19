@@ -5,7 +5,7 @@ use tokio::sync::Mutex;
 
 use sqlx::{Connection, SqliteConnection};
 
-use super::types::*;
+use super::types::{GameInfo, GameItem, PersonInfo, StreamInfo};
 
 pub struct Database {
     pub conn: sqlx::SqliteConnection,
@@ -27,7 +27,7 @@ impl Database {
                     file_name: row.filename.into(),
                     file_size: row.filesize as u64,
                     timestamp: row.ts,
-                    duration: row.duration as f64,
+                    duration: f64::from(row.duration),
                     has_preview: row.preview_count > 0,
                     thumbnail_count: row.thumbnail_count as usize,
 
@@ -51,7 +51,7 @@ impl Database {
                         name: row.name,
                         platform: row.platform,
                         twitch_name: row.twitch_name,
-                        start_time: row.start_time as f64,
+                        start_time: f64::from(row.start_time),
                     }
                 })
                 .fetch_all(&mut tx)
@@ -188,7 +188,7 @@ impl Database {
             "SELECT stream_id,time FROM stream_progress WHERE user_id = ?1",
             user_id
         )
-        .map(|row| (row.stream_id, row.time as f64))
+        .map(|row| (row.stream_id, f64::from(row.time)))
         .fetch_all(&mut self.conn)
         .await
         .unwrap()
