@@ -1,11 +1,12 @@
-use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
+
+use tokio::fs::read_to_string;
 
 use chrono::{DateTime, TimeZone, Utc};
 
 use serde::{Deserialize, Serialize};
 
-use super::STREAMS_DIR;
+use super::{db::Database, STREAMS_DIR};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PersonInfo {
@@ -19,23 +20,30 @@ pub struct GameInfo {
     pub name: String,
     pub twitch_name: Option<String>,
     pub platform: Option<String>,
+}
+impl From<GameFeature> for GameInfo {
+    fn from(item: GameFeature) -> Self {
+        item.info
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GameFeature {
+    #[serde(flatten)]
+    pub info: GameInfo,
     pub start_time: f64,
 }
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct StreamDatapoint {
-    pub title: String,
-    pub viewcount: i64,
-    pub game: String,
-    pub timestamp: i64,
+impl GameFeature {
+    pub const fn from_game_info(info: GameInfo, start_time: f64) -> Self {
+        Self { info, start_time }
+    }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct StreamJumpcut {
-    pub timestamp: i64,
-    pub amount: i64,
+#[derive(Deserialize)]
+pub struct GameItem {
+    pub id: i64,
+    pub start_time: f64,
 }
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StreamFileName(String);
 impl StreamFileName {
@@ -51,8 +59,9 @@ impl StreamFileName {
         res
     }
 
-    pub fn get_extra_info(&self) -> Option<(Vec<StreamDatapoint>, Vec<StreamJumpcut>)> {
+    pub async fn get_extra_info(&self) -> Option<(Vec<StreamDatapoint>, Vec<StreamJumpcut>)> {
         read_to_string(self.extra_info_file_path())
+            .await
             .ok()
             .and_then(|s| serde_yaml::from_str(&s).ok())
             .map(|info: serde_yaml::Value| {
@@ -80,7 +89,6 @@ impl From<StreamFileName> for String {
         s.0
     }
 }
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StreamInfo {
     pub id: i64,
@@ -91,12 +99,6 @@ pub struct StreamInfo {
     pub has_chat: bool,
     pub has_preview: bool,
     pub thumbnail_count: usize,
-
-    pub persons: Vec<PersonInfo>,
-    pub games: Vec<GameInfo>,
-
-    pub datapoints: Vec<StreamDatapoint>,
-    pub jumpcuts: Vec<StreamJumpcut>,
 }
 
 impl StreamInfo {
@@ -126,13 +128,48 @@ impl StreamInfo {
         Utc.timestamp(self.timestamp, 0)
     }
 
-    pub fn get_extra_info(&self) -> Option<(Vec<StreamDatapoint>, Vec<StreamJumpcut>)> {
-        self.file_name.get_extra_info()
+    pub async fn get_extra_info(&self) -> Option<(Vec<StreamDatapoint>, Vec<StreamJumpcut>)> {
+        self.file_name.get_extra_info().await
+    }
+
+    pub async fn into_stream_json(self, db: &mut Database) -> StreamJson {
+        let games = db.get_stream_games(self.id).await;
+        let persons = db.get_stream_participations(self.id).await;
+        let (datapoints, jumpcuts) = self.get_extra_info().await.unwrap_or((vec![], vec![]));
+
+        StreamJson {
+            info: self,
+
+            persons,
+            games,
+
+            datapoints,
+            jumpcuts,
+        }
     }
 }
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct StreamDatapoint {
+    pub title: String,
+    pub viewcount: i64,
+    pub game: String,
+    pub timestamp: i64,
+}
 
-#[derive(Clone, Debug, Deserialize)]
-pub struct GameItem {
-    pub id: i64,
-    pub start_time: f64,
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct StreamJumpcut {
+    pub timestamp: i64,
+    pub amount: i64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct StreamJson {
+    #[serde(flatten)]
+    pub info: StreamInfo,
+
+    pub persons: Vec<PersonInfo>,
+    pub games: Vec<GameFeature>,
+
+    pub datapoints: Vec<StreamDatapoint>,
+    pub jumpcuts: Vec<StreamJumpcut>,
 }

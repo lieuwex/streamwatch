@@ -1,7 +1,7 @@
-use std::fs::create_dir_all;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use tokio::fs::create_dir_all;
 use tokio::process::Command;
 
 const SECTION_DURATION_SECS: i32 = 1;
@@ -52,7 +52,7 @@ pub async fn create_thumbnails(
     output_dir: &Path,
     time_locations: &[i32],
 ) -> io::Result<Vec<PathBuf>> {
-    create_dir_all(output_dir)?;
+    create_dir_all(output_dir).await?;
 
     let mut outputs = Vec::with_capacity(time_locations.len());
 
@@ -111,7 +111,7 @@ pub async fn create_thumbnails(
 
 /// Create a low-resolution av1 preview
 pub async fn create_preview(path: &Path, output: &Path, sections: &[(i32, i32)]) -> io::Result<()> {
-    create_dir_all(output.ancestors().nth(1).unwrap())?;
+    create_dir_all(output.ancestors().nth(1).unwrap()).await?;
 
     let path_string = path.to_str().unwrap().to_owned();
 

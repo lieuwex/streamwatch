@@ -1,6 +1,6 @@
-use crate::create_preview::get_video_duration_in_secs;
 use crate::job_handler::{Job, SENDER};
-use crate::types::{GameInfo, GameItem, StreamFileName, StreamInfo};
+use crate::types::{GameFeature, GameItem, StreamFileName, StreamInfo};
+use crate::{create_preview::get_video_duration_in_secs, types::GameInfo};
 use crate::{DB, STREAMS_DIR};
 
 use std::collections::HashMap;
@@ -124,12 +124,13 @@ async fn handle_new_stream(
     };
 
     struct FoldState<'a> {
-        games: Vec<GameInfo>,
+        games: Vec<GameFeature>,
         possible_games: &'a mut Vec<GameInfo>,
     }
 
     let file_name: StreamFileName = file_name.into();
-    let games: Vec<GameItem> = iter(file_name.get_extra_info().map(|(datapoints, _)| datapoints))
+    let games: Vec<GameItem> = iter(file_name.get_extra_info().await)
+        .map(|(datapoints, _)| datapoints)
         .map(iter)
         .flatten()
         .filter(|datapoint| std::future::ready(!datapoint.game.is_empty()))
@@ -142,7 +143,7 @@ async fn handle_new_stream(
                 let last_item_same_game = state
                     .games
                     .last()
-                    .map(|x| x.twitch_name.as_ref().unwrap() == &datapoint.game)
+                    .map(|g| g.info.twitch_name.as_ref().unwrap() == &datapoint.game)
                     .unwrap_or(false);
                 if last_item_same_game {
                     return state;
@@ -159,25 +160,25 @@ async fn handle_new_stream(
                         }
                     })
                     .cloned();
-
                 let game = match game {
                     Some(g) => g,
                     None => {
                         let game = db
                             .lock()
                             .await
-                            .insert_possible_game(GameInfo {
-                                id: 0,
-                                name: datapoint.game.clone(),
-                                twitch_name: Some(datapoint.game),
-                                platform: None,
-                                start_time: (datapoint.timestamp - timestamp).max(0) as f64,
-                            })
+                            .insert_possible_game(
+                                datapoint.game.clone(),
+                                Some(datapoint.game),
+                                None,
+                            )
                             .await;
                         state.possible_games.push(game.clone());
                         game
                     }
                 };
+
+                let start_time = (datapoint.timestamp - timestamp).max(0) as f64;
+                let game = GameFeature::from_game_info(game, start_time);
 
                 state.games.push(game);
                 state
@@ -187,7 +188,7 @@ async fn handle_new_stream(
         .games
         .into_iter()
         .map(|g| GameItem {
-            id: g.id,
+            id: g.info.id,
             start_time: g.start_time,
         })
         .collect();

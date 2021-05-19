@@ -5,7 +5,9 @@ use tokio::sync::Mutex;
 
 use sqlx::{Connection, SqliteConnection};
 
-use super::types::{GameInfo, GameItem, PersonInfo, StreamInfo};
+use crate::types::{GameInfo, StreamFileName};
+
+use super::types::{GameFeature, GameItem, PersonInfo, StreamInfo};
 
 pub struct Database {
     pub conn: sqlx::SqliteConnection,
@@ -20,63 +22,58 @@ impl Database {
     pub async fn get_streams(&mut self) -> Vec<StreamInfo> {
         let mut tx = self.conn.begin().await.unwrap();
 
-        let mut streams = sqlx::query!("SELECT id,filename,filesize,ts,duration,(SELECT COUNT(*) FROM stream_previews WHERE stream_id = id) as preview_count,(SELECT COUNT(*) FROM stream_thumbnails WHERE stream_id  = id) as thumbnail_count FROM streams")
+        let streams = sqlx::query!("SELECT id,filename,filesize,ts,duration,(SELECT COUNT(*) FROM stream_previews WHERE stream_id = id) as preview_count,(SELECT COUNT(*) FROM stream_thumbnails WHERE stream_id  = id) as thumbnail_count FROM streams")
             .map(|row| {
+                let file_name: StreamFileName = row.filename.into();
+                let has_chat = file_name.chat_file_path().exists();
+
                 StreamInfo {
                     id : row.id,
-                    file_name: row.filename.into(),
+                    file_name,
                     file_size: row.filesize as u64,
                     timestamp: row.ts,
                     duration: f64::from(row.duration),
+                    has_chat,
                     has_preview: row.preview_count > 0,
                     thumbnail_count: row.thumbnail_count as usize,
-
-                    games: vec![],
-                    persons: vec![],
-                    has_chat: false,
-
-                    datapoints: vec![],
-                    jumpcuts: vec![],
                 }
             })
             .fetch_all(&mut tx)
             .await
             .unwrap();
 
-        for stream in &mut streams {
-            stream.games = sqlx::query!("SELECT game_id,games.name,games.platform,start_time,games.twitch_name FROM game_features INNER JOIN games ON games.id = game_id WHERE stream_id = ?1 ORDER BY start_time;", stream.id)
-                .map(|row| {
-                    GameInfo {
+        tx.commit().await.unwrap();
+
+        streams
+    }
+
+    pub async fn get_stream_games(&mut self, stream_id: i64) -> Vec<GameFeature> {
+        sqlx::query!("SELECT game_id,games.name,games.platform,start_time,games.twitch_name FROM game_features INNER JOIN games ON games.id = game_id WHERE stream_id = ?1 ORDER BY start_time;", stream_id)
+            .map(|row| {
+                GameFeature {
+                    info: GameInfo {
                         id: row.game_id,
                         name: row.name,
                         platform: row.platform,
                         twitch_name: row.twitch_name,
-                        start_time: f64::from(row.start_time),
-                    }
-                })
-                .fetch_all(&mut tx)
-                .await
-                .unwrap();
+                    },
+                    start_time: f64::from(row.start_time),
+                }
+            })
+            .fetch_all(&mut self.conn)
+            .await
+            .unwrap()
+    }
 
-            stream.persons = sqlx::query!("SELECT person_id,persons.name FROM person_participations INNER JOIN persons ON persons.id = person_id WHERE stream_id = ?1 ORDER BY persons.name;", stream.id)
-                .map(|row| PersonInfo {
-                    id: row.person_id,
-                    name: row.name,
-                })
-                .fetch_all(&mut tx)
-                .await
-                .unwrap();
-
-            stream.has_chat = stream.file_name.chat_file_path().exists();
-
-            if let Some(res) = stream.get_extra_info() {
-                (stream.datapoints, stream.jumpcuts) = res;
-            }
-        }
-
-        tx.commit().await.unwrap();
-
-        streams
+    pub async fn get_stream_participations(&mut self, stream_id: i64) -> Vec<PersonInfo> {
+        sqlx::query!("SELECT person_id,persons.name FROM person_participations INNER JOIN persons ON persons.id = person_id WHERE stream_id = ?1 ORDER BY persons.name;", stream_id)
+            .map(|row| PersonInfo {
+                id: row.person_id,
+                name: row.name,
+            })
+            .fetch_all(&mut self.conn)
+            .await
+            .unwrap()
     }
 
     pub async fn get_stream_id_by_filename(&mut self, file_name: &str) -> Option<i64> {
@@ -101,24 +98,32 @@ impl Database {
                 name: row.name,
                 twitch_name: row.twitch_name,
                 platform: row.platform,
-                start_time: 0.0,
             })
             .fetch_all(&mut self.conn)
             .await
             .unwrap()
     }
-    pub async fn insert_possible_game(&mut self, mut game: GameInfo) -> GameInfo {
+    pub async fn insert_possible_game(
+        &mut self,
+        name: String,
+        twitch_name: Option<String>,
+        platform: Option<String>,
+    ) -> GameInfo {
         let res = sqlx::query!(
             "INSERT INTO GAMES(name, platform, twitch_name) VALUES(?1, ?2, ?3)",
-            game.name,
-            game.platform,
-            game.twitch_name
+            name,
+            platform,
+            twitch_name
         )
         .execute(&mut self.conn)
         .await
         .unwrap();
-        game.id = res.last_insert_rowid();
-        game
+        GameInfo {
+            name,
+            twitch_name,
+            platform,
+            id: res.last_insert_rowid(),
+        }
     }
 
     pub async fn replace_games(&mut self, stream_id: i64, items: Vec<GameItem>) {

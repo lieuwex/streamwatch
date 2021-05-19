@@ -1,6 +1,5 @@
-use crate::chat::handle_chat_request;
-use crate::scan::scan_streams;
-use crate::types::GameItem;
+use crate::{chat::handle_chat_request, types::StreamJson};
+use crate::{scan::scan_streams, types::GameItem};
 use crate::{DB, STREAMS_DIR};
 
 use std::collections::HashMap;
@@ -20,10 +19,16 @@ macro_rules! reply_status {
 }
 
 async fn streams() -> Result<warp::reply::Json, Infallible> {
-    let streams = {
+    let streams: Vec<StreamJson> = {
         let db = DB.get().unwrap();
         let mut db = db.lock().await;
-        db.get_streams().await
+        let streams = db.get_streams().await;
+
+        let mut res = Vec::with_capacity(streams.len());
+        for stream in streams {
+            res.push(stream.into_stream_json(&mut db).await);
+        }
+        res
     };
 
     Ok(warp::reply::json(&streams))
