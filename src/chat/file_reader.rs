@@ -58,7 +58,6 @@ impl FileReader {
                     ts: $datetime.timestamp_millis() as usize,
                     content: $json,
                 });
-                self.prev_datetime = $datetime;
             };
         }
 
@@ -73,13 +72,15 @@ impl FileReader {
         if let Some((datetime, json)) = self.orphan.take() {
             if start <= datetime && datetime <= end {
                 push!(datetime, json);
-            } else {
+            } else if start <= datetime && end < datetime {
                 self.orphan = Some((datetime, json));
+                return Ok(res);
             }
         }
 
         while let Some(line) = self.lines.next_line().await? {
             let (datetime, json) = Self::parse_line(&line)?;
+            self.prev_datetime = datetime;
 
             // loop until we reached the starting point
             if datetime < start {
