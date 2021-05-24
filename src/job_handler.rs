@@ -12,6 +12,8 @@ use once_cell::sync::OnceCell;
 
 use sqlx::Connection;
 
+use anyhow::Result;
+
 pub static SENDER: OnceCell<tokio::sync::mpsc::Sender<Job>> = OnceCell::new();
 
 #[derive(Clone, Debug)]
@@ -20,16 +22,14 @@ pub enum Job {
     Thumbnails { stream_id: i64, path: PathBuf },
 }
 
-async fn make_preview(stream_id: i64, path: PathBuf) {
-    let sections = get_sections_from_file(&path).await.unwrap();
+async fn make_preview(stream_id: i64, path: PathBuf) -> Result<()> {
+    let sections = get_sections_from_file(&path).await?;
     println!("[{}] sections are: {:?}", stream_id, sections);
 
     let start = Instant::now();
 
     let preview_path = StreamInfo::preview_path(stream_id);
-    create_preview(&path, &preview_path, &sections)
-        .await
-        .unwrap();
+    create_preview(&path, &preview_path, &sections).await?;
 
     let db = DB.get().unwrap();
     let mut db = db.lock().await;
@@ -38,27 +38,26 @@ async fn make_preview(stream_id: i64, path: PathBuf) {
         stream_id
     )
     .execute(&mut db.conn)
-    .await
-    .unwrap();
+    .await?;
 
     println!("[{}] made preview in {:?}", stream_id, start.elapsed());
+
+    Ok(())
 }
 
-async fn make_thumbnails(stream_id: i64, path: PathBuf) {
-    let sections = get_sections_from_file(&path).await.unwrap();
+async fn make_thumbnails(stream_id: i64, path: PathBuf) -> Result<()> {
+    let sections = get_sections_from_file(&path).await?;
     println!("[{}] sections are: {:?}", stream_id, sections);
 
     let start = Instant::now();
 
     let thumbnail_path = StreamInfo::thumbnails_path(stream_id);
     let ts: Vec<_> = sections.iter().map(|(a, _)| *a).collect();
-    let items = create_thumbnails(&path, &thumbnail_path, &ts)
-        .await
-        .unwrap();
+    let items = create_thumbnails(&path, &thumbnail_path, &ts).await?;
 
     let db = DB.get().unwrap();
     let mut db = db.lock().await;
-    let mut tx = db.conn.begin().await.unwrap();
+    let mut tx = db.conn.begin().await?;
 
     for (i, _) in items.iter().enumerate() {
         let i = i as i64;
@@ -68,11 +67,10 @@ async fn make_thumbnails(stream_id: i64, path: PathBuf) {
             i
         )
         .execute(&mut tx)
-        .await
-        .unwrap();
+        .await?;
     }
 
-    tx.commit().await.unwrap();
+    tx.commit().await?;
 
     println!(
         "[{}] made {} thumbnails in {:?}",
@@ -80,6 +78,8 @@ async fn make_thumbnails(stream_id: i64, path: PathBuf) {
         sections.len(),
         start.elapsed()
     );
+
+    Ok(())
 }
 
 async fn job_watcher(receiver: Arc<sync::Mutex<sync::mpsc::Receiver<Job>>>) {
@@ -92,9 +92,13 @@ async fn job_watcher(receiver: Arc<sync::Mutex<sync::mpsc::Receiver<Job>>>) {
             Some(j) => j,
         };
 
-        match job {
+        let res = match job {
             Job::Preview { stream_id, path } => make_preview(stream_id, path).await,
             Job::Thumbnails { stream_id, path } => make_thumbnails(stream_id, path).await,
+        };
+        match res {
+            Ok(_) => {}
+            Err(e) => eprintln!("error while executing job: {:?}", e),
         }
     }
 }

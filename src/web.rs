@@ -1,9 +1,9 @@
+use crate::util::AnyhowError;
 use crate::{chat::handle_chat_request, types::StreamJson};
+use crate::{check, DB, STREAMS_DIR};
 use crate::{scan::scan_streams, types::GameItem};
-use crate::{DB, STREAMS_DIR};
 
 use std::collections::HashMap;
-use std::convert::Infallible;
 
 use warp::http::StatusCode;
 use warp::{Filter, Reply};
@@ -18,15 +18,16 @@ macro_rules! reply_status {
     };
 }
 
-async fn streams() -> Result<warp::reply::Json, Infallible> {
+async fn streams() -> Result<warp::reply::Json, warp::Rejection> {
     let streams: Vec<StreamJson> = {
         let db = DB.get().unwrap();
         let mut db = db.lock().await;
-        let streams = db.get_streams().await;
+        let streams = check!(db.get_streams().await);
 
         let mut res = Vec::with_capacity(streams.len());
         for stream in streams {
-            res.push(stream.into_stream_json(&mut db).await);
+            let stream = check!(stream.into_stream_json(&mut db).await);
+            res.push(stream);
         }
         res
     };
@@ -37,11 +38,11 @@ async fn streams() -> Result<warp::reply::Json, Infallible> {
 async fn replace_games(
     stream_id: i64,
     items: Vec<GameItem>,
-) -> Result<warp::reply::Response, Infallible> {
+) -> Result<warp::reply::Response, warp::Rejection> {
     {
         let db = DB.get().unwrap();
         let mut db = db.lock().await;
-        db.replace_games(stream_id, items).await;
+        check!(db.replace_games(stream_id, items).await);
     }
 
     Ok(warp::reply().into_response())
@@ -50,17 +51,17 @@ async fn replace_games(
 async fn replace_persons(
     stream_id: i64,
     person_ids: Vec<i64>,
-) -> Result<warp::reply::Response, Infallible> {
+) -> Result<warp::reply::Response, warp::Rejection> {
     {
         let db = DB.get().unwrap();
         let mut db = db.lock().await;
-        db.replace_persons(stream_id, person_ids).await;
+        check!(db.replace_persons(stream_id, person_ids).await);
     }
 
     Ok(warp::reply().into_response())
 }
 
-async fn get_streams_progress(username: String) -> Result<warp::reply::Response, Infallible> {
+async fn get_streams_progress(username: String) -> Result<warp::reply::Response, warp::Rejection> {
     let map = {
         let db = DB.get().unwrap();
         let mut db = db.lock().await;
@@ -70,7 +71,7 @@ async fn get_streams_progress(username: String) -> Result<warp::reply::Response,
             Some(id) => id,
         };
 
-        db.get_streams_progress(user_id).await
+        check!(db.get_streams_progress(user_id).await)
     };
 
     Ok(reply_status!(warp::reply::json(&map), StatusCode::FOUND))
@@ -78,7 +79,7 @@ async fn get_streams_progress(username: String) -> Result<warp::reply::Response,
 async fn set_streams_progress(
     username: String,
     progress: HashMap<i64, f64>,
-) -> Result<warp::reply::Response, Infallible> {
+) -> Result<warp::reply::Response, warp::Rejection> {
     {
         let db = DB.get().unwrap();
         let mut db = db.lock().await;
@@ -88,36 +89,36 @@ async fn set_streams_progress(
             Some(id) => id,
         };
 
-        db.update_streams_progress(user_id, progress).await;
+        check!(db.update_streams_progress(user_id, progress).await)
     }
 
     Ok(warp::reply().into_response())
 }
 
-async fn get_possible_games() -> Result<warp::reply::Json, Infallible> {
+async fn get_possible_games() -> Result<warp::reply::Json, warp::Rejection> {
     let possible_games = {
         let db = DB.get().unwrap();
         let mut db = db.lock().await;
 
-        db.get_possible_games().await
+        check!(db.get_possible_games().await)
     };
 
     Ok(warp::reply::json(&possible_games))
 }
 
-async fn get_possible_persons() -> Result<warp::reply::Json, Infallible> {
+async fn get_possible_persons() -> Result<warp::reply::Json, warp::Rejection> {
     let possible_persons = {
         let db = DB.get().unwrap();
         let mut db = db.lock().await;
 
-        db.get_possible_persons().await
+        check!(db.get_possible_persons().await)
     };
 
     Ok(warp::reply::json(&possible_persons))
 }
 
-async fn rescan_streams() -> Result<impl warp::Reply, Infallible> {
-    scan_streams().await?;
+async fn rescan_streams() -> Result<impl warp::Reply, warp::Rejection> {
+    check!(scan_streams().await);
     Ok(warp::reply())
 }
 

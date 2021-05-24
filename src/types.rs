@@ -1,3 +1,6 @@
+use super::{db::Database, STREAMS_DIR};
+
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use tokio::fs::read_to_string;
@@ -6,15 +9,15 @@ use chrono::{DateTime, TimeZone, Utc};
 
 use serde::{Deserialize, Serialize};
 
-use super::{db::Database, STREAMS_DIR};
+use anyhow::{anyhow, Result};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct PersonInfo {
     pub id: i64,
     pub name: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct GameInfo {
     pub id: i64,
     pub name: String,
@@ -27,7 +30,7 @@ impl From<GameFeature> for GameInfo {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct GameFeature {
     #[serde(flatten)]
     pub info: GameInfo,
@@ -44,7 +47,7 @@ pub struct GameItem {
     pub id: i64,
     pub start_time: f64,
 }
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct StreamFileName(String);
 impl StreamFileName {
     pub fn chat_file_path(&self) -> PathBuf {
@@ -59,22 +62,32 @@ impl StreamFileName {
         res
     }
 
-    pub async fn get_extra_info(&self) -> Option<(Vec<StreamDatapoint>, Vec<StreamJumpcut>)> {
-        read_to_string(self.extra_info_file_path())
-            .await
-            .ok()
-            .and_then(|s| serde_yaml::from_str(&s).ok())
-            .map(|info: serde_yaml::Value| {
-                let info = info.as_mapping().unwrap();
+    pub async fn get_extra_info(
+        &self,
+    ) -> Result<Option<(Vec<StreamDatapoint>, Vec<StreamJumpcut>)>> {
+        let s = match read_to_string(self.extra_info_file_path()).await {
+            Ok(s) => s,
+            Err(e) if e.kind() == ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(anyhow::Error::from(e)),
+        };
 
-                let datapoints = info.get(&"datapoints".into()).unwrap();
-                let datapoints = serde_yaml::from_value(datapoints.to_owned()).unwrap();
+        let info: serde_yaml::Value = serde_yaml::from_str(&s)?;
 
-                let jumpcuts = info.get(&"jumpcuts".into()).unwrap();
-                let jumpcuts = serde_yaml::from_value(jumpcuts.to_owned()).unwrap();
+        let info = info
+            .as_mapping()
+            .ok_or(anyhow!("parsing error: expected mapping"))?;
 
-                (datapoints, jumpcuts)
-            })
+        let datapoints = info
+            .get(&"datapoints".into())
+            .ok_or(anyhow!("field not found"))?;
+        let datapoints = serde_yaml::from_value(datapoints.to_owned())?;
+
+        let jumpcuts = info
+            .get(&"jumpcuts".into())
+            .ok_or(anyhow!("field not found"))?;
+        let jumpcuts = serde_yaml::from_value(jumpcuts.to_owned())?;
+
+        Ok(Some((datapoints, jumpcuts)))
     }
 }
 
@@ -89,7 +102,7 @@ impl From<StreamFileName> for String {
         s.0
     }
 }
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct StreamInfo {
     pub id: i64,
     pub file_name: StreamFileName,
@@ -128,16 +141,18 @@ impl StreamInfo {
         Utc.timestamp(self.timestamp, 0)
     }
 
-    pub async fn get_extra_info(&self) -> Option<(Vec<StreamDatapoint>, Vec<StreamJumpcut>)> {
+    pub async fn get_extra_info(
+        &self,
+    ) -> Result<Option<(Vec<StreamDatapoint>, Vec<StreamJumpcut>)>> {
         self.file_name.get_extra_info().await
     }
 
-    pub async fn into_stream_json(self, db: &mut Database) -> StreamJson {
-        let games = db.get_stream_games(self.id).await;
-        let persons = db.get_stream_participations(self.id).await;
-        let (datapoints, jumpcuts) = self.get_extra_info().await.unwrap_or((vec![], vec![]));
+    pub async fn into_stream_json(self, db: &mut Database) -> Result<StreamJson> {
+        let games = db.get_stream_games(self.id).await?;
+        let persons = db.get_stream_participations(self.id).await?;
+        let (datapoints, jumpcuts) = self.get_extra_info().await?.unwrap_or((vec![], vec![]));
 
-        StreamJson {
+        Ok(StreamJson {
             info: self,
 
             persons,
@@ -145,7 +160,7 @@ impl StreamInfo {
 
             datapoints,
             jumpcuts,
-        }
+        })
     }
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -162,7 +177,7 @@ pub struct StreamJumpcut {
     pub amount: i64,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct StreamJson {
     #[serde(flatten)]
     pub info: StreamInfo,

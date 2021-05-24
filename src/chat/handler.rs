@@ -1,6 +1,10 @@
 use super::file_reader::FileReader;
 use super::types::Item;
-use crate::DB;
+use crate::{
+    check,
+    util::{merge, AnyhowError},
+    DB,
+};
 
 use std::collections::hash_map::{Entry, HashMap};
 use std::sync::Arc;
@@ -15,14 +19,14 @@ use once_cell::sync::Lazy;
 
 use uuid::Uuid;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct Request {
     session_token: Option<Uuid>,
     start: i64, // milliseconds UTC timestamp
     end: i64,   // milliseconds UTC timestamp
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
 struct Response {
     session_token: Uuid,
     res: Vec<Item>,
@@ -92,8 +96,7 @@ pub async fn handle_chat_request(
                 let stream = match {
                     let db = DB.get().unwrap();
                     let mut db = db.lock().await;
-                    db.get_streams()
-                        .await
+                    check!(db.get_streams().await)
                         .into_iter()
                         .find(|s| s.id == stream_id)
                 } {
@@ -102,7 +105,7 @@ pub async fn handle_chat_request(
                 };
 
                 let file_reader = if stream.has_chat {
-                    Some(FileReader::new(stream).await.unwrap())
+                    Some(check!(FileReader::new(stream).await))
                 } else {
                     None
                 };
@@ -117,10 +120,12 @@ pub async fn handle_chat_request(
             }
         };
 
-        match file_reader {
-            Some(reader) => reader.get_between(start, end).await.unwrap(),
+        let file_messages = match file_reader {
+            Some(reader) => check!(reader.get_between(start, end).await),
             None => vec![],
-        }
+        };
+        let db_messages = vec![];
+        merge(file_messages, db_messages, |x| x.ts).unwrap()
     };
 
     Ok(warp::reply::json(&Response {

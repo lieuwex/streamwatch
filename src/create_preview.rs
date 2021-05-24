@@ -4,9 +4,11 @@ use std::path::{Path, PathBuf};
 use tokio::fs::create_dir_all;
 use tokio::process::Command;
 
+use anyhow::Result;
+
 const SECTION_DURATION_SECS: i32 = 1;
 
-pub async fn get_video_duration_in_secs(path: &Path) -> io::Result<f32> {
+pub async fn get_video_duration_in_secs(path: &Path) -> Result<f32> {
     let output = Command::new("ffprobe")
         .args(&[
             "-v",
@@ -22,11 +24,8 @@ pub async fn get_video_duration_in_secs(path: &Path) -> io::Result<f32> {
         .output()
         .await?;
 
-    let s = String::from_utf8(output.stdout).unwrap();
-    match s.trim().parse::<f32>() {
-        Ok(v) => Ok(v),
-        Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
-    }
+    let s = String::from_utf8(output.stdout)?;
+    Ok(s.trim().parse::<f32>()?)
 }
 
 fn get_sections(duration: f32) -> Vec<(i32, i32)> {
@@ -41,7 +40,7 @@ fn get_sections(duration: f32) -> Vec<(i32, i32)> {
     vec
 }
 
-pub async fn get_sections_from_file(path: &Path) -> io::Result<Vec<(i32, i32)>> {
+pub async fn get_sections_from_file(path: &Path) -> Result<Vec<(i32, i32)>> {
     let duration = get_video_duration_in_secs(path).await?;
     Ok(get_sections(duration))
 }

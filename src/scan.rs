@@ -4,9 +4,9 @@ use crate::{create_preview::get_video_duration_in_secs, types::GameInfo};
 use crate::{DB, STREAMS_DIR};
 
 use std::collections::HashMap;
-use std::convert::Infallible;
 use std::path::Path;
 
+use anyhow::Result;
 use tokio::fs::{read_dir, remove_dir_all, remove_file};
 use tokio_stream::wrappers::ReadDirStream;
 
@@ -21,6 +21,8 @@ use sqlx::Connection;
 
 use regex::Regex;
 
+use anyhow::bail;
+
 static FILE_STEM_REGEX_DATETIME: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}").unwrap());
 static FILE_STEM_REGEX_DATE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\d{4}-\d{2}-\d{2}").unwrap());
@@ -34,12 +36,12 @@ macro_rules! log_err {
     };
 }
 
-pub async fn remove_thumbnails_and_preview(stream_id: i64) {
+pub async fn remove_thumbnails_and_preview(stream_id: i64) -> Result<()> {
     {
         let db = DB.get().unwrap();
         let mut db = db.lock().await;
 
-        let mut tx = db.conn.begin().await.unwrap();
+        let mut tx = db.conn.begin().await?;
 
         // remove preview
         sqlx::query!(
@@ -47,22 +49,22 @@ pub async fn remove_thumbnails_and_preview(stream_id: i64) {
             stream_id,
         )
         .execute(&mut tx)
-        .await
-        .unwrap();
+        .await?;
         // remove thumbnails
         sqlx::query!(
             "DELETE FROM stream_thumbnails WHERE stream_id = ?1",
             stream_id,
         )
         .execute(&mut tx)
-        .await
-        .unwrap();
+        .await?;
 
-        tx.commit().await.unwrap();
+        tx.commit().await?;
     }
 
     log_err!(remove_file(StreamInfo::preview_path(stream_id)).await);
     log_err!(remove_dir_all(StreamInfo::thumbnails_path(stream_id)).await);
+
+    Ok(())
 }
 
 fn parse_filename(path: &Path) -> Option<DateTime<Local>> {
@@ -86,7 +88,7 @@ async fn handle_new_stream(
     file_name: String,
     file_size: i64,
     possible_games: &mut Vec<GameInfo>,
-) {
+) -> Result<()> {
     let db = DB.get().unwrap();
     let sender = SENDER.get().unwrap();
 
@@ -101,8 +103,7 @@ async fn handle_new_stream(
     let duration = match get_video_duration_in_secs(path).await {
         Ok(d) => d,
         Err(_) => {
-            eprintln!("error getting duration for: {:?}", path);
-            return;
+            bail!("error getting duration for: {:?}", path);
         }
     };
 
@@ -118,8 +119,7 @@ async fn handle_new_stream(
             duration
         )
         .execute(&mut db.conn)
-        .await
-        .unwrap()
+        .await?
         .last_insert_rowid()
     };
 
@@ -129,7 +129,7 @@ async fn handle_new_stream(
     }
 
     let file_name: StreamFileName = file_name.into();
-    let games: Vec<GameItem> = iter(file_name.get_extra_info().await)
+    let games: Vec<GameItem> = iter(file_name.get_extra_info().await?)
         .map(|(datapoints, _)| datapoints)
         .map(iter)
         .flatten()
@@ -171,7 +171,8 @@ async fn handle_new_stream(
                                 Some(datapoint.game),
                                 None,
                             )
-                            .await;
+                            .await
+                            .unwrap();
                         state.possible_games.push(game.clone());
                         game
                     }
@@ -192,25 +193,25 @@ async fn handle_new_stream(
             start_time: g.start_time,
         })
         .collect();
-    db.lock().await.replace_games(stream_id, games).await;
+    db.lock().await.replace_games(stream_id, games).await?;
 
     sender
         .send(Job::Thumbnails {
             stream_id,
             path: path.to_owned(),
         })
-        .await
-        .unwrap();
+        .await?;
     sender
         .send(Job::Preview {
             stream_id,
             path: path.to_owned(),
         })
-        .await
-        .unwrap();
+        .await?;
+
+    Ok(())
 }
 
-async fn handle_modified_stream(path: &Path, file_name: String, file_size: i64) {
+async fn handle_modified_stream(path: &Path, file_name: String, file_size: i64) -> Result<()> {
     let db = DB.get().unwrap();
     let sender = SENDER.get().unwrap();
 
@@ -227,28 +228,27 @@ async fn handle_modified_stream(path: &Path, file_name: String, file_size: i64) 
             stream_id
         )
         .execute(&mut db.conn)
-        .await
-        .unwrap();
+        .await?;
 
         stream_id
     };
 
-    remove_thumbnails_and_preview(stream_id).await;
+    remove_thumbnails_and_preview(stream_id).await?;
 
     sender
         .send(Job::Thumbnails {
             stream_id,
             path: path.to_owned(),
         })
-        .await
-        .unwrap();
+        .await?;
     sender
         .send(Job::Preview {
             stream_id,
             path: path.to_owned(),
         })
-        .await
-        .unwrap();
+        .await?;
+
+    Ok(())
 }
 
 #[derive(PartialEq, Eq)]
@@ -258,20 +258,20 @@ enum ItemState {
     Modified,
     Removed,
 }
-pub async fn scan_streams() -> Result<(), Infallible> {
+pub async fn scan_streams() -> Result<()> {
     let db = DB.get().unwrap();
 
     let file_name_states = {
         let db_map: HashMap<String, u64> = {
             let mut db = db.lock().await;
             db.get_streams()
-                .await
+                .await?
                 .into_iter()
                 .map(|stream| (stream.file_name.into(), stream.file_size))
                 .collect()
         };
         let dir_map: HashMap<String, u64> = {
-            let dir = read_dir(STREAMS_DIR).await.unwrap();
+            let dir = read_dir(STREAMS_DIR).await?;
             ReadDirStream::new(dir)
                 .then(|item| async {
                     let item = item.unwrap();
@@ -322,7 +322,7 @@ pub async fn scan_streams() -> Result<(), Infallible> {
 
     let mut possible_games = {
         let mut db = db.lock().await;
-        db.get_possible_games().await
+        db.get_possible_games().await?
     };
 
     let mut all_unchanged = true;
@@ -334,13 +334,13 @@ pub async fn scan_streams() -> Result<(), Infallible> {
             ItemState::New => {
                 println!("got new item: {}", file_name);
                 all_unchanged = false;
-                handle_new_stream(&path, file_name, file_size as i64, &mut possible_games).await;
+                handle_new_stream(&path, file_name, file_size as i64, &mut possible_games).await?;
             }
             ItemState::Modified => {
                 println!("got updated item: {}", file_name);
                 all_unchanged = false;
 
-                handle_modified_stream(&path, file_name, file_size as i64).await;
+                handle_modified_stream(&path, file_name, file_size as i64).await?;
             }
             ItemState::Removed => {
                 println!("got removed item: {}", file_name);
@@ -352,8 +352,8 @@ pub async fn scan_streams() -> Result<(), Infallible> {
                     .get_stream_id_by_filename(&file_name)
                     .await
                     .unwrap();
-                remove_thumbnails_and_preview(stream_id).await;
-                db.lock().await.remove_stream(stream_id).await;
+                remove_thumbnails_and_preview(stream_id).await?;
+                db.lock().await.remove_stream(stream_id).await?;
             }
         }
     }

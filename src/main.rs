@@ -12,13 +12,13 @@ mod types;
 mod util;
 mod web;
 
-use std::io;
 use std::sync::Arc;
 
 use crate::chat::cache_pruner;
 use crate::job_handler::spawn_jobs;
 use crate::web::run_server;
 
+use anyhow::Result;
 use once_cell::sync::OnceCell;
 
 const PREVIEW_WORKERS: usize = 4;
@@ -27,8 +27,8 @@ pub const STREAMS_DIR: &str = "/streams/lekkerspelen";
 pub static DB: OnceCell<Arc<tokio::sync::Mutex<db::Database>>> = OnceCell::new();
 
 #[tokio::main]
-async fn main() -> io::Result<()> {
-    okky!(DB, db::Database::new().await);
+async fn main() -> Result<()> {
+    okky!(DB, db::Database::new().await?);
 
     spawn_jobs(PREVIEW_WORKERS);
 
