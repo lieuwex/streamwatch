@@ -23,6 +23,7 @@ where
 }
 
 /// Merge two sorted iterators.
+/// The iterator should be sorted.
 ///
 /// Returns `None` if the iterators were not sorted, `Some(vec)` containing the iterators merged
 /// otherwise.
@@ -39,14 +40,14 @@ where
     let mut res = Vec::with_capacity(a.size_hint().0 + b.size_hint().0);
     let mut prev_item = None;
     macro_rules! push {
-        ($iter:expr) => {{
+        ($iter:expr, $mapped:expr) => {{
             let item = $iter.next().unwrap();
-            let mapped = map(&item);
+            let mapped = $mapped.unwrap_or_else(|| map(&item));
             match prev_item {
                 Some(prev_item) if prev_item > mapped => return None,
                 _ => {
-                    prev_item = Some(mapped);
                     res.push(item);
+                    prev_item = Some(mapped);
                 }
             }
         }};
@@ -55,15 +56,15 @@ where
     loop {
         match (a.peek(), b.peek()) {
             (None, None) => break,
-            (Some(_), None) => push!(a),
-            (None, Some(_)) => push!(b),
+            (Some(_), None) => push!(a, None),
+            (None, Some(_)) => push!(b, None),
             (Some(a_next), Some(b_next)) => {
                 let a_next = map(a_next);
                 let b_next = map(b_next);
                 if a_next <= b_next {
-                    push!(a);
+                    push!(a, Some(a_next));
                 } else {
-                    push!(b);
+                    push!(b, Some(b_next));
                 }
             }
         }
