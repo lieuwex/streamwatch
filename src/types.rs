@@ -173,8 +173,8 @@ pub struct StreamDatapoint {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StreamJumpcut {
-    pub timestamp: i64,
-    pub amount: i64,
+    pub at: i64,
+    pub duration: i64,
 }
 
 #[derive(Clone, Debug, Serialize)]
