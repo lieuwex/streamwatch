@@ -8,6 +8,8 @@ use std::collections::HashMap;
 use warp::http::StatusCode;
 use warp::{Filter, Reply};
 
+use anyhow::anyhow;
+
 macro_rules! reply_status {
     ($reply:expr, $code:expr) => {
         warp::reply::with_status($reply, $code).into_response()
@@ -106,6 +108,25 @@ async fn get_possible_games() -> Result<warp::reply::Json, warp::Rejection> {
     Ok(warp::reply::json(&possible_games))
 }
 
+async fn add_possible_game(
+    info: HashMap<String, String>,
+) -> Result<warp::reply::Json, warp::Rejection> {
+    let game_info = {
+        let db = DB.get().unwrap();
+        let mut db = db.lock().await;
+
+        let name = check!(info.get("name").ok_or_else(|| anyhow!("name required")));
+        let twitch_name = info.get("twitchName");
+        let platform = info.get("platform");
+        check!(
+            db.insert_possible_game(name.to_owned(), twitch_name.cloned(), platform.cloned())
+                .await
+        )
+    };
+
+    Ok(warp::reply::json(&game_info))
+}
+
 async fn get_possible_persons() -> Result<warp::reply::Json, warp::Rejection> {
     let possible_persons = {
         let db = DB.get().unwrap();
@@ -136,6 +157,10 @@ pub async fn run_server() {
             .or(warp::get()
                 .and(warp::path!("games"))
                 .and_then(get_possible_games))
+            .or(warp::post()
+                .and(warp::path!("games"))
+                .and(warp::body::json())
+                .and_then(add_possible_game))
             .or(warp::put()
                 .and(warp::path!("stream" / i64 / "games"))
                 .and(warp::body::json())
