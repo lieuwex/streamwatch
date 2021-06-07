@@ -1,4 +1,6 @@
-use crate::types::{GameFeature, GameInfo, GameItem, PersonInfo, StreamFileName, StreamInfo};
+use crate::types::{
+    GameFeature, GameInfo, GameItem, PersonInfo, StreamFileName, StreamInfo, StreamProgress,
+};
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -8,6 +10,8 @@ use tokio::sync::Mutex;
 use sqlx::{Connection, SqliteConnection};
 
 use anyhow::Result;
+
+use chrono::Utc;
 
 pub struct Database {
     pub conn: sqlx::SqliteConnection,
@@ -184,12 +188,23 @@ impl Database {
             .ok()
     }
 
-    pub async fn get_streams_progress(&mut self, user_id: i64) -> Result<HashMap<i64, f64>> {
+    pub async fn get_streams_progress(
+        &mut self,
+        user_id: i64,
+    ) -> Result<HashMap<i64, StreamProgress>> {
         let res = sqlx::query!(
-            "SELECT stream_id,time FROM stream_progress WHERE user_id = ?1",
+            "SELECT stream_id,time,real_time FROM stream_progress WHERE user_id = ?1",
             user_id
         )
-        .map(|row| (row.stream_id, f64::from(row.time)))
+        .map(|row| {
+            (
+                row.stream_id,
+                StreamProgress {
+                    time: f64::from(row.time),
+                    real_time: row.real_time,
+                },
+            )
+        })
         .fetch_all(&mut self.conn)
         .await?
         .into_iter()
@@ -202,10 +217,12 @@ impl Database {
         user_id: i64,
         progress: HashMap<i64, f64>,
     ) -> Result<()> {
+        let real_time = Utc::now().timestamp();
+
         let mut tx = self.conn.begin().await?;
 
         for (stream_id, time) in progress {
-            sqlx::query!("INSERT INTO stream_progress(user_id, stream_id, time) VALUES(?1, ?2, ?3) ON CONFLICT DO UPDATE SET time = ?3", user_id, stream_id, time)
+            sqlx::query!("INSERT INTO stream_progress(user_id, stream_id, time, real_time) VALUES(?1, ?2, ?3, ?4) ON CONFLICT DO UPDATE SET time = ?3, real_time = ?4", user_id, stream_id, time, real_time)
             .execute(&mut tx)
             .await
             ?;

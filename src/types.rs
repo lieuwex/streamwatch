@@ -188,3 +188,9 @@ pub struct StreamJson {
     pub datapoints: Vec<StreamDatapoint>,
     pub jumpcuts: Vec<StreamJumpcut>,
 }
+
+#[derive(Clone, Debug, Serialize)]
+pub struct StreamProgress {
+    pub time: f64,
+    pub real_time: i64,
+}
