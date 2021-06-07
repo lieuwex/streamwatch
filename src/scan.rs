@@ -215,17 +215,33 @@ async fn handle_modified_stream(path: &Path, file_name: String, file_size: i64) 
     let db = DB.get().unwrap();
     let sender = SENDER.get().unwrap();
 
+    let timestamp = match parse_filename(path) {
+        Some(date) => date.timestamp(),
+        None => {
+            eprintln!("error parsing timestamp for {:?}", path);
+            0
+        }
+    };
+
+    let duration = match get_video_duration_in_secs(path).await {
+        Ok(d) => d,
+        Err(_) => {
+            bail!("error getting duration for: {:?}", path);
+        }
+    };
+
     let stream_id = {
         let mut db = db.lock().await;
 
-        let file_size = file_size as i64;
         let stream_id = db.get_stream_id_by_filename(&file_name).await.unwrap();
 
         // update filesize
         sqlx::query!(
-            "UPDATE streams SET filesize = ?1 WHERE id = ?2",
+            "UPDATE streams SET filesize = ?1, ts = ?2, duration = ?3 WHERE id = ?4",
             file_size,
-            stream_id
+            timestamp,
+            duration,
+            stream_id,
         )
         .execute(&mut db.conn)
         .await?;
