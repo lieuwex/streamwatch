@@ -6,7 +6,7 @@ use crate::create_preview::{create_preview, create_thumbnails, get_sections_from
 use crate::types::StreamInfo;
 use crate::{okky, DB};
 
-use tokio::sync;
+use tokio::sync::{self, mpsc};
 
 use once_cell::sync::OnceCell;
 
@@ -14,7 +14,40 @@ use sqlx::Connection;
 
 use anyhow::Result;
 
-pub static SENDER: OnceCell<tokio::sync::mpsc::UnboundedSender<Job>> = OnceCell::new();
+pub static SENDER: OnceCell<JobSender> = OnceCell::new();
+
+pub struct JobSender {
+    thumbnail_jobs: mpsc::UnboundedSender<Job>,
+    preview_jobs: mpsc::UnboundedSender<Job>,
+}
+impl JobSender {
+    pub fn send(&self, job: Job) -> Result<(), mpsc::error::SendError<Job>> {
+        match job {
+            j @ Job::Thumbnails { .. } => self.thumbnail_jobs.send(j),
+            j @ Job::Preview { .. } => self.preview_jobs.send(j),
+        }
+    }
+}
+
+pub struct JobReceiver {
+    thumbnail_jobs: mpsc::UnboundedReceiver<Job>,
+    preview_jobs: mpsc::UnboundedReceiver<Job>,
+}
+impl JobReceiver {
+    pub async fn recv(&mut self) -> Option<Job> {
+        let thumbnails = self.thumbnail_jobs.recv();
+        tokio::pin!(thumbnails);
+        let previews = self.preview_jobs.recv();
+        tokio::pin!(previews);
+
+        tokio::select! {
+            biased;
+            Some(job) = &mut thumbnails => Some(job),
+            Some(job) = &mut previews => Some(job),
+            else => None,
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub enum Job {
@@ -82,7 +115,7 @@ async fn make_thumbnails(stream_id: i64, path: PathBuf) -> Result<()> {
     Ok(())
 }
 
-async fn job_watcher(receiver: Arc<sync::Mutex<sync::mpsc::UnboundedReceiver<Job>>>) {
+async fn job_watcher(receiver: Arc<sync::Mutex<JobReceiver>>) {
     loop {
         let job = match {
             let mut receiver = receiver.lock().await;
@@ -104,7 +137,22 @@ async fn job_watcher(receiver: Arc<sync::Mutex<sync::mpsc::UnboundedReceiver<Job
 }
 
 pub fn spawn_jobs(count: usize) {
-    let (sender, receiver) = sync::mpsc::unbounded_channel();
+    let (sender, receiver) = {
+        let (thumb_sender, thumb_receiver) = sync::mpsc::unbounded_channel();
+        let (prev_sender, prev_receiver) = sync::mpsc::unbounded_channel();
+
+        let sender = JobSender {
+            thumbnail_jobs: thumb_sender,
+            preview_jobs: prev_sender,
+        };
+
+        let receiver = JobReceiver {
+            thumbnail_jobs: thumb_receiver,
+            preview_jobs: prev_receiver,
+        };
+
+        (sender, receiver)
+    };
     let receiver = Arc::new(sync::Mutex::new(receiver));
     okky!(SENDER, sender);
 
