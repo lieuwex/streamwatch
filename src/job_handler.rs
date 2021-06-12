@@ -14,7 +14,7 @@ use sqlx::Connection;
 
 use anyhow::Result;
 
-pub static SENDER: OnceCell<tokio::sync::mpsc::Sender<Job>> = OnceCell::new();
+pub static SENDER: OnceCell<tokio::sync::mpsc::UnboundedSender<Job>> = OnceCell::new();
 
 #[derive(Clone, Debug)]
 pub enum Job {
@@ -82,7 +82,7 @@ async fn make_thumbnails(stream_id: i64, path: PathBuf) -> Result<()> {
     Ok(())
 }
 
-async fn job_watcher(receiver: Arc<sync::Mutex<sync::mpsc::Receiver<Job>>>) {
+async fn job_watcher(receiver: Arc<sync::Mutex<sync::mpsc::UnboundedReceiver<Job>>>) {
     loop {
         let job = match {
             let mut receiver = receiver.lock().await;
@@ -104,7 +104,7 @@ async fn job_watcher(receiver: Arc<sync::Mutex<sync::mpsc::Receiver<Job>>>) {
 }
 
 pub fn spawn_jobs(count: usize) {
-    let (sender, receiver) = sync::mpsc::channel(1);
+    let (sender, receiver) = sync::mpsc::unbounded_channel();
     let receiver = Arc::new(sync::Mutex::new(receiver));
     okky!(SENDER, sender);
 

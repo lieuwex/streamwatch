@@ -195,18 +195,14 @@ async fn handle_new_stream(
         .collect();
     db.lock().await.replace_games(stream_id, games).await?;
 
-    sender
-        .send(Job::Thumbnails {
-            stream_id,
-            path: path.to_owned(),
-        })
-        .await?;
-    sender
-        .send(Job::Preview {
-            stream_id,
-            path: path.to_owned(),
-        })
-        .await?;
+    sender.send(Job::Thumbnails {
+        stream_id,
+        path: path.to_owned(),
+    })?;
+    sender.send(Job::Preview {
+        stream_id,
+        path: path.to_owned(),
+    })?;
 
     Ok(())
 }
@@ -251,18 +247,14 @@ async fn handle_modified_stream(path: &Path, file_name: String, file_size: i64) 
 
     remove_thumbnails_and_preview(stream_id).await?;
 
-    sender
-        .send(Job::Thumbnails {
-            stream_id,
-            path: path.to_owned(),
-        })
-        .await?;
-    sender
-        .send(Job::Preview {
-            stream_id,
-            path: path.to_owned(),
-        })
-        .await?;
+    sender.send(Job::Thumbnails {
+        stream_id,
+        path: path.to_owned(),
+    })?;
+    sender.send(Job::Preview {
+        stream_id,
+        path: path.to_owned(),
+    })?;
 
     Ok(())
 }
