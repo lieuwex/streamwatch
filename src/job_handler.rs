@@ -10,8 +10,6 @@ use tokio::sync::{self, mpsc};
 
 use once_cell::sync::OnceCell;
 
-use sqlx::Connection;
-
 use anyhow::Result;
 
 pub static SENDER: OnceCell<JobSender> = OnceCell::new();
@@ -65,12 +63,11 @@ async fn make_preview(stream_id: i64, path: PathBuf) -> Result<()> {
     create_preview(&path, &preview_path, &sections).await?;
 
     let db = DB.get().unwrap();
-    let mut db = db.lock().await;
     sqlx::query!(
         "INSERT INTO stream_previews(stream_id) values(?1)",
         stream_id
     )
-    .execute(&mut db.conn)
+    .execute(&db.pool)
     .await?;
 
     println!("[{}] made preview in {:?}", stream_id, start.elapsed());
@@ -89,8 +86,7 @@ async fn make_thumbnails(stream_id: i64, path: PathBuf) -> Result<()> {
     let items = create_thumbnails(&path, &thumbnail_path, &ts).await?;
 
     let db = DB.get().unwrap();
-    let mut db = db.lock().await;
-    let mut tx = db.conn.begin().await?;
+    let mut tx = db.pool.begin().await?;
 
     for (i, _) in items.iter().enumerate() {
         let i = i as i64;

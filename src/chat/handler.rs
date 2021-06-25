@@ -95,7 +95,6 @@ pub async fn handle_chat_request(
 
                 let stream = match {
                     let db = DB.get().unwrap();
-                    let mut db = db.lock().await;
                     check!(db.get_streams().await)
                         .into_iter()
                         .find(|s| s.id == stream_id)
@@ -104,7 +103,7 @@ pub async fn handle_chat_request(
                     Some(s) => s,
                 };
 
-                let file_reader = if stream.has_chat {
+                let file_reader = if check!(stream.file_name.has_chat().await) {
                     Some(check!(FileReader::new(stream).await))
                 } else {
                     None

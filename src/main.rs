@@ -7,12 +7,11 @@ mod chat;
 mod create_preview;
 mod db;
 mod job_handler;
+mod migrations;
 mod scan;
 mod types;
 mod util;
 mod web;
-
-use std::sync::Arc;
 
 use crate::chat::cache_pruner;
 use crate::job_handler::spawn_jobs;
@@ -24,11 +23,13 @@ use once_cell::sync::OnceCell;
 const PREVIEW_WORKERS: usize = 4;
 pub const STREAMS_DIR: &str = "/streams/lekkerspelen";
 
-pub static DB: OnceCell<Arc<tokio::sync::Mutex<db::Database>>> = OnceCell::new();
+pub static DB: OnceCell<db::Database> = OnceCell::new();
 
 #[tokio::main]
 async fn main() -> Result<()> {
     okky!(DB, db::Database::new().await?);
+
+    migrations::run().await.unwrap();
 
     spawn_jobs(PREVIEW_WORKERS);
 

@@ -17,8 +17,6 @@ use once_cell::sync::Lazy;
 
 use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, TimeZone};
 
-use sqlx::Connection;
-
 use regex::Regex;
 
 use anyhow::bail;
@@ -39,9 +37,8 @@ macro_rules! log_err {
 pub async fn remove_thumbnails_and_preview(stream_id: i64) -> Result<()> {
     {
         let db = DB.get().unwrap();
-        let mut db = db.lock().await;
 
-        let mut tx = db.conn.begin().await?;
+        let mut tx = db.pool.begin().await?;
 
         // remove preview
         sqlx::query!(
@@ -108,8 +105,6 @@ async fn handle_new_stream(
     };
 
     let stream_id: i64 = {
-        let mut db = db.lock().await;
-
         let duration = f64::from(duration);
         sqlx::query!(
             "INSERT INTO streams(filename, filesize, ts, duration) values(?1, ?2, ?3, ?4)",
@@ -118,21 +113,51 @@ async fn handle_new_stream(
             timestamp,
             duration
         )
-        .execute(&mut db.conn)
+        .execute(&db.pool)
         .await?
         .last_insert_rowid()
     };
+
+    let (datapoints, jumpcuts) = StreamFileName::from(file_name)
+        .get_extra_info_from_file()
+        .await?
+        .unwrap_or((vec![], vec![]));
+
+    {
+        let mut tx = db.pool.begin().await?;
+
+        for datapoint in &datapoints {
+            sqlx::query!(
+                "INSERT INTO stream_datapoints(stream_id, timestamp, title, viewcount) VALUES(?, ?, ?, ?)",
+                stream_id,
+                datapoint.timestamp,
+                datapoint.title,
+                datapoint.viewcount,
+            )
+            .execute(&mut tx)
+            .await?;
+        }
+
+        for jumpcut in jumpcuts {
+            sqlx::query!(
+                "INSERT INTO stream_jumpcuts(stream_id, at, duration) VALUES(?, ?, ?)",
+                stream_id,
+                jumpcut.at,
+                jumpcut.duration,
+            )
+            .execute(&mut tx)
+            .await?;
+        }
+
+        tx.commit().await?;
+    }
 
     struct FoldState<'a> {
         games: Vec<GameFeature>,
         possible_games: &'a mut Vec<GameInfo>,
     }
 
-    let file_name: StreamFileName = file_name.into();
-    let games: Vec<GameItem> = iter(file_name.get_extra_info().await?)
-        .map(|(datapoints, _)| datapoints)
-        .map(iter)
-        .flatten()
+    let games = iter(datapoints)
         .filter(|datapoint| std::future::ready(!datapoint.game.is_empty()))
         .fold(
             FoldState {
@@ -164,8 +189,6 @@ async fn handle_new_stream(
                     Some(g) => g,
                     None => {
                         let game = db
-                            .lock()
-                            .await
                             .insert_possible_game(
                                 datapoint.game.clone(),
                                 Some(datapoint.game),
@@ -191,9 +214,8 @@ async fn handle_new_stream(
         .map(|g| GameItem {
             id: g.info.id,
             start_time: g.start_time,
-        })
-        .collect();
-    db.lock().await.replace_games(stream_id, games).await?;
+        });
+    db.replace_games(stream_id, games).await?;
 
     sender.send(Job::Thumbnails {
         stream_id,
@@ -227,8 +249,6 @@ async fn handle_modified_stream(path: &Path, file_name: String, file_size: i64) 
     };
 
     let stream_id = {
-        let mut db = db.lock().await;
-
         let stream_id = db.get_stream_id_by_filename(&file_name).await.unwrap();
 
         // update filesize
@@ -239,7 +259,7 @@ async fn handle_modified_stream(path: &Path, file_name: String, file_size: i64) 
             duration,
             stream_id,
         )
-        .execute(&mut db.conn)
+        .execute(&db.pool)
         .await?;
 
         stream_id
@@ -271,7 +291,6 @@ pub async fn scan_streams() -> Result<()> {
 
     let file_name_states = {
         let db_map: HashMap<String, u64> = {
-            let mut db = db.lock().await;
             db.get_streams()
                 .await?
                 .into_iter()
@@ -328,10 +347,7 @@ pub async fn scan_streams() -> Result<()> {
         m
     };
 
-    let mut possible_games = {
-        let mut db = db.lock().await;
-        db.get_possible_games().await?
-    };
+    let mut possible_games = { db.get_possible_games().await? };
 
     let mut all_unchanged = true;
     for (file_name, (file_size, state)) in file_name_states {
@@ -354,14 +370,9 @@ pub async fn scan_streams() -> Result<()> {
                 println!("got removed item: {}", file_name);
                 all_unchanged = false;
 
-                let stream_id = db
-                    .lock()
-                    .await
-                    .get_stream_id_by_filename(&file_name)
-                    .await
-                    .unwrap();
+                let stream_id = db.get_stream_id_by_filename(&file_name).await.unwrap();
                 remove_thumbnails_and_preview(stream_id).await?;
-                db.lock().await.remove_stream(stream_id).await?;
+                db.remove_stream(stream_id).await?;
             }
         }
     }

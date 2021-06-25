@@ -3,7 +3,8 @@ use super::{db::Database, STREAMS_DIR};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
-use tokio::fs::read_to_string;
+use tokio::fs::{metadata, read_to_string};
+use tokio::try_join;
 
 use chrono::{DateTime, TimeZone, Utc};
 
@@ -56,13 +57,27 @@ impl StreamFileName {
         res
     }
 
+    pub async fn has_chat(&self) -> Result<bool> {
+        let res = metadata(self.chat_file_path())
+            .await
+            .map(|_| true)
+            .or_else(|error| {
+                if error.kind() == ErrorKind::NotFound {
+                    Ok(false)
+                } else {
+                    Err(error)
+                }
+            })?;
+        Ok(res)
+    }
+
     fn extra_info_file_path(&self) -> PathBuf {
         let mut res = Path::new(STREAMS_DIR).join(&self.0);
         res.set_extension("yaml");
         res
     }
 
-    pub async fn get_extra_info(
+    pub async fn get_extra_info_from_file(
         &self,
     ) -> Result<Option<(Vec<StreamDatapoint>, Vec<StreamJumpcut>)>> {
         let s = match read_to_string(self.extra_info_file_path()).await {
@@ -105,13 +120,14 @@ impl From<StreamFileName> for String {
 #[derive(Clone, Debug, Serialize)]
 pub struct StreamInfo {
     pub id: i64,
+    pub title: Option<String>,
     pub file_name: StreamFileName,
     pub file_size: u64,
     pub timestamp: i64,
     pub duration: f64,
-    pub has_chat: bool,
     pub has_preview: bool,
     pub thumbnail_count: usize,
+    pub has_chat: bool,
 }
 
 impl StreamInfo {
@@ -141,16 +157,13 @@ impl StreamInfo {
         Utc.timestamp(self.timestamp, 0)
     }
 
-    pub async fn get_extra_info(
-        &self,
-    ) -> Result<Option<(Vec<StreamDatapoint>, Vec<StreamJumpcut>)>> {
-        self.file_name.get_extra_info().await
-    }
-
-    pub async fn into_stream_json(self, db: &mut Database) -> Result<StreamJson> {
-        let games = db.get_stream_games(self.id).await?;
-        let persons = db.get_stream_participations(self.id).await?;
-        let (datapoints, jumpcuts) = self.get_extra_info().await?.unwrap_or((vec![], vec![]));
+    pub async fn into_stream_json(self, db: &Database) -> Result<StreamJson> {
+        let (games, persons, datapoints, jumpcuts) = try_join!(
+            db.get_stream_games(self.id),
+            db.get_stream_participations(self.id),
+            db.get_stream_datapoints(self.id),
+            db.get_stream_jumpcuts(self.id),
+        )?;
 
         Ok(StreamJson {
             info: self,
@@ -167,7 +180,8 @@ impl StreamInfo {
 pub struct StreamDatapoint {
     pub title: String,
     pub viewcount: i64,
-    pub game: String,
+    #[serde(skip_serializing)]
+    pub game: String, // this field was later removed
     pub timestamp: i64,
 }
 
