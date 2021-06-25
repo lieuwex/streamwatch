@@ -33,7 +33,7 @@ impl Database {
                 CASE
                     WHEN custom.title IS NOT NULL then custom.title
                     WHEN dp.title IS NOT NULL THEN dp.title
-                    WHEN COUNT(gf.game_id) > 0 THEN GROUP_CONCAT(g.name, ", ")
+                    WHEN COUNT(games.name) > 0 THEN GROUP_CONCAT(games.name, ", ")
                     ELSE NULL
                 END
             , ' ' || char(10)) AS title,
@@ -49,11 +49,17 @@ impl Database {
             ON custom.stream_id = s.id
         LEFT JOIN stream_datapoints AS dp
             ON dp.stream_id = s.id AND LENGTH(dp.title) > 0
-        LEFT JOIN game_features AS gf
-            ON gf.stream_id = s.id AND gf.game_id <> 7
-        LEFT JOIN games AS g
-            ON gf.game_id = g.id
-        GROUP BY s.id;
+        LEFT JOIN (
+            SELECT gf.stream_id as stream_id, g.name as name
+            FROM game_features AS gf
+            JOIN games AS g
+                ON gf.game_id = g.id
+            WHERE gf.game_id <> 7
+            ORDER BY gf.start_time
+        ) as games
+            ON games.stream_id = s.id
+        GROUP BY s.id
+        ORDER BY s.ts ASC;
         "#,
         )
         .map(|row: SqliteRow| StreamInfo {
