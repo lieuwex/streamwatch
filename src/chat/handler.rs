@@ -95,16 +95,14 @@ pub async fn handle_chat_request(
 
                 let stream = match {
                     let db = DB.get().unwrap();
-                    check!(db.get_streams().await)
-                        .into_iter()
-                        .find(|s| s.id == stream_id)
+                    check!(db.get_stream_by_id(stream_id).await)
                 } {
                     None => return Err(warp::reject::not_found()),
                     Some(s) => s,
                 };
 
-                let file_reader = if check!(stream.file_name.has_chat().await) {
-                    Some(check!(FileReader::new(stream).await))
+                let file_reader = if check!(stream.info.file_name.has_chat().await) {
+                    Some(check!(FileReader::new(stream.info).await))
                 } else {
                     None
                 };

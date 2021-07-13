@@ -1,10 +1,9 @@
-use super::{db::Database, STREAMS_DIR};
+use super::STREAMS_DIR;
 
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use tokio::fs::{metadata, read_to_string};
-use tokio::try_join;
 
 use chrono::{DateTime, TimeZone, Utc};
 
@@ -12,13 +11,13 @@ use serde::{Deserialize, Serialize};
 
 use anyhow::{anyhow, Result};
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PersonInfo {
     pub id: i64,
     pub name: String,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct GameInfo {
     pub id: i64,
     pub name: String,
@@ -31,7 +30,7 @@ impl From<GameFeature> for GameInfo {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct GameFeature {
     #[serde(flatten)]
     pub info: GameInfo,
@@ -48,9 +47,14 @@ pub struct GameItem {
     pub id: i64,
     pub start_time: f64,
 }
+
 #[derive(Clone, Debug, Serialize)]
 pub struct StreamFileName(String);
 impl StreamFileName {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
     pub fn chat_file_path(&self) -> PathBuf {
         let mut res = Path::new(STREAMS_DIR).join(&self.0);
         res.set_extension("txt.zst");
@@ -117,10 +121,18 @@ impl From<StreamFileName> for String {
         s.0
     }
 }
+
+impl AsRef<str> for StreamFileName {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct StreamInfo {
     pub id: i64,
     pub title: Option<String>,
+    pub title_type: String,
     pub file_name: StreamFileName,
     pub file_size: u64,
     pub timestamp: i64,
@@ -156,31 +168,12 @@ impl StreamInfo {
     pub fn datetime(&self) -> DateTime<Utc> {
         Utc.timestamp(self.timestamp, 0)
     }
-
-    pub async fn into_stream_json(self, db: &Database) -> Result<StreamJson> {
-        let (games, persons, datapoints, jumpcuts) = try_join!(
-            db.get_stream_games(self.id),
-            db.get_stream_participations(self.id),
-            db.get_stream_datapoints(self.id),
-            db.get_stream_jumpcuts(self.id),
-        )?;
-
-        Ok(StreamJson {
-            info: self,
-
-            persons,
-            games,
-
-            datapoints,
-            jumpcuts,
-        })
-    }
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StreamDatapoint {
     pub title: String,
     pub viewcount: i64,
-    #[serde(skip_serializing)]
+    #[serde(skip_serializing, default)]
     pub game: String, // this field was later removed
     pub timestamp: i64,
 }

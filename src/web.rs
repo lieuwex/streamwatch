@@ -5,8 +5,6 @@ use crate::{scan::scan_streams, types::GameItem};
 
 use std::collections::HashMap;
 
-use futures::stream::FuturesOrdered;
-use futures::TryStreamExt;
 use warp::http::StatusCode;
 use warp::{Filter, Reply};
 
@@ -24,12 +22,7 @@ macro_rules! reply_status {
 
 async fn streams() -> Result<warp::reply::Json, warp::Rejection> {
     let db = DB.get().unwrap();
-    let futs: FuturesOrdered<_> = check!(db.get_streams().await)
-        .into_iter()
-        .map(|stream| stream.into_stream_json(&db))
-        .collect();
-    let streams: Vec<StreamJson> = check!(futs.try_collect().await);
-
+    let streams: Vec<StreamJson> = check!(db.get_streams().await);
     Ok(warp::reply::json(&streams))
 }
 

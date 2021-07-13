@@ -1,18 +1,18 @@
-use crate::types::{
-    GameFeature, GameInfo, GameItem, PersonInfo, StreamDatapoint, StreamInfo, StreamJumpcut,
-    StreamProgress,
-};
+use crate::types::StreamJson;
+use crate::types::{GameInfo, GameItem, PersonInfo, StreamInfo, StreamProgress};
 
 use std::collections::HashMap;
+use std::time::Instant;
 
 use sqlx::sqlite::SqliteRow;
 use sqlx::Row;
-
 use sqlx::SqlitePool;
 
 use anyhow::Result;
 
 use chrono::Utc;
+
+use futures::TryStreamExt;
 
 pub struct Database {
     pub pool: sqlx::SqlitePool,
@@ -24,132 +24,121 @@ impl Database {
         Ok(Self { pool })
     }
 
-    pub async fn get_streams(&self) -> Result<Vec<StreamInfo>> {
+    fn map_stream(row: SqliteRow) -> StreamJson {
+        StreamJson {
+            info: StreamInfo {
+                id: row.get("id"),
+                title: row.get("title"),
+                title_type: row.get("title_type"),
+                file_name: {
+                    let val: String = row.get("filename");
+                    val.into()
+                },
+                file_size: {
+                    let x: i64 = row.get("filesize");
+                    x as u64
+                },
+                timestamp: row.get("ts"),
+                duration: {
+                    let x: f32 = row.get("duration");
+                    f64::from(x)
+                },
+                has_preview: {
+                    let x: i64 = row.get("preview_count");
+                    x > 0
+                },
+                thumbnail_count: {
+                    let x: i64 = row.get("thumbnail_count");
+                    x as usize
+                },
+                has_chat: row.get("has_chat"),
+            },
+
+            persons: {
+                let json: Option<String> = row.get("persons");
+                json.map(|json| serde_json::from_str(&json).unwrap())
+                    .unwrap_or(vec![])
+            },
+            games: {
+                let json: Option<String> = row.get("games");
+                json.map(|json| serde_json::from_str(&json).unwrap())
+                    .unwrap_or(vec![])
+            },
+
+            datapoints: {
+                let json: Option<String> = row.get("datapoints");
+                json.map(|json| serde_json::from_str(&json).unwrap())
+                    .unwrap_or(vec![])
+            },
+            jumpcuts: {
+                let json: Option<String> = row.get("jumpcuts");
+                json.map(|json| serde_json::from_str(&json).unwrap())
+                    .unwrap_or(vec![])
+            },
+        }
+    }
+
+    pub async fn get_stream_by_id(&self, stream_id: i64) -> Result<Option<StreamJson>> {
+        let instant = Instant::now();
+        let stream = sqlx::query(
+            r#"
+        SELECT
+            id,
+            title,
+            title_type,
+            filename,
+            filesize,
+            ts,
+            duration,
+            preview_count,
+            thumbnail_count,
+            has_chat,
+            datapoints,
+            jumpcuts,
+            persons,
+            games
+        FROM streams_view
+        WHERE id = ?
+        LIMIT 1
+        "#,
+        )
+        .bind(stream_id)
+        .map(Self::map_stream)
+        .fetch_optional(&self.pool)
+        .await?;
+        println!("get_stream_by_id took {:?}", instant.elapsed());
+
+        Ok(stream)
+    }
+
+    pub async fn get_streams(&self) -> Result<Vec<StreamJson>> {
+        let instant = Instant::now();
         let streams = sqlx::query(
             r#"
         SELECT
-            s.id,
-            TRIM(
-                CASE
-                    WHEN custom.title IS NOT NULL then custom.title
-                    WHEN dp.title IS NOT NULL THEN dp.title
-                    WHEN COUNT(games.name) > 0 THEN GROUP_CONCAT(games.name, ", ")
-                    ELSE NULL
-                END
-            , ' ' || char(10)) AS title,
-            s.filename,
-            s.filesize,
-            s.ts,
-            s.duration,
-            (SELECT COUNT(*) FROM stream_previews WHERE stream_id = s.id) AS preview_count,
-            (SELECT COUNT(*) FROM stream_thumbnails WHERE stream_id  = s.id) AS thumbnail_count,
-            s.has_chat
-        FROM streams AS s
-        LEFT JOIN custom_stream_titles AS custom
-            ON custom.stream_id = s.id
-        LEFT JOIN stream_datapoints AS dp
-            ON dp.stream_id = s.id AND LENGTH(dp.title) > 0
-        LEFT JOIN (
-            SELECT gf.stream_id as stream_id, g.name as name
-            FROM game_features AS gf
-            JOIN games AS g
-                ON gf.game_id = g.id
-            WHERE gf.game_id <> 7
-            ORDER BY gf.start_time
-        ) as games
-            ON games.stream_id = s.id
-        GROUP BY s.id
-        ORDER BY s.ts ASC;
+            id,
+            title,
+            title_type,
+            filename,
+            filesize,
+            ts,
+            duration,
+            preview_count,
+            thumbnail_count,
+            has_chat,
+            datapoints,
+            jumpcuts,
+            persons,
+            games
+        FROM streams_view
         "#,
         )
-        .map(|row: SqliteRow| StreamInfo {
-            id: row.get("id"),
-            title: row.get("title"),
-            file_name: {
-                let val: String = row.get("filename");
-                val.into()
-            },
-            file_size: {
-                let x: i64 = row.get("filesize");
-                x as u64
-            },
-            timestamp: row.get("ts"),
-            duration: {
-                let x: f32 = row.get("duration");
-                f64::from(x)
-            },
-            has_preview: {
-                let x: i64 = row.get("preview_count");
-                x > 0
-            },
-            thumbnail_count: {
-                let x: i64 = row.get("thumbnail_count");
-                x as usize
-            },
-            has_chat: row.get("has_chat"),
-        })
+        .map(Self::map_stream)
         .fetch_all(&self.pool)
         .await?;
+        println!("get_streams took {:?}", instant.elapsed());
+
         Ok(streams)
-    }
-
-    pub async fn get_stream_games(&self, stream_id: i64) -> Result<Vec<GameFeature>> {
-        let res = sqlx::query!("SELECT game_id,games.name,games.platform,start_time,games.twitch_name FROM game_features INNER JOIN games ON games.id = game_id WHERE stream_id = ?1 ORDER BY start_time;", stream_id)
-            .map(|row| {
-                GameFeature {
-                    info: GameInfo {
-                        id: row.game_id,
-                        name: row.name,
-                        platform: row.platform,
-                        twitch_name: row.twitch_name,
-                    },
-                    start_time: f64::from(row.start_time),
-                }
-            })
-            .fetch_all(&self.pool)
-            .await?;
-        Ok(res)
-    }
-
-    pub async fn get_stream_participations(&self, stream_id: i64) -> Result<Vec<PersonInfo>> {
-        let res = sqlx::query!("SELECT person_id,persons.name FROM person_participations INNER JOIN persons ON persons.id = person_id WHERE stream_id = ?1 ORDER BY persons.name;", stream_id)
-            .map(|row| PersonInfo {
-                id: row.person_id,
-                name: row.name,
-            })
-            .fetch_all(&self.pool)
-            .await?;
-        Ok(res)
-    }
-
-    pub async fn get_stream_datapoints(&self, stream_id: i64) -> Result<Vec<StreamDatapoint>> {
-        let res = sqlx::query!(
-            "SELECT * FROM stream_datapoints WHERE stream_id = ?",
-            stream_id
-        )
-        .map(|row| StreamDatapoint {
-            title: row.title,
-            viewcount: row.viewcount,
-            game: String::new(),
-            timestamp: row.timestamp,
-        })
-        .fetch_all(&self.pool)
-        .await?;
-        Ok(res)
-    }
-
-    pub async fn get_stream_jumpcuts(&self, stream_id: i64) -> Result<Vec<StreamJumpcut>> {
-        let res = sqlx::query!(
-            "SELECT * FROM stream_jumpcuts WHERE stream_id = ?",
-            stream_id
-        )
-        .map(|row| StreamJumpcut {
-            at: row.at,
-            duration: row.duration,
-        })
-        .fetch_all(&self.pool)
-        .await?;
-        Ok(res)
     }
 
     pub async fn get_stream_id_by_filename(&self, file_name: &str) -> Option<i64> {
@@ -265,7 +254,7 @@ impl Database {
     }
 
     pub async fn get_streams_progress(&self, user_id: i64) -> Result<HashMap<i64, StreamProgress>> {
-        let res = sqlx::query!(
+        let res: sqlx::Result<HashMap<i64, StreamProgress>> = sqlx::query!(
             "SELECT stream_id,time,real_time FROM stream_progress WHERE user_id = ?1",
             user_id
         )
@@ -278,11 +267,10 @@ impl Database {
                 },
             )
         })
-        .fetch_all(&self.pool)
-        .await?
-        .into_iter()
-        .collect();
-        Ok(res)
+        .fetch(&self.pool)
+        .try_collect()
+        .await;
+        Ok(res?)
     }
 
     pub async fn update_streams_progress(
@@ -293,14 +281,27 @@ impl Database {
         let real_time = Utc::now().timestamp();
 
         let mut tx = self.pool.begin().await?;
-
         for (stream_id, time) in progress {
-            sqlx::query!("INSERT INTO stream_progress(user_id, stream_id, time, real_time) VALUES(?1, ?2, ?3, ?4) ON CONFLICT DO UPDATE SET time = ?3, real_time = ?4", user_id, stream_id, time, real_time)
+            sqlx::query!(
+                r#"
+                INSERT INTO stream_progress
+                    (user_id, stream_id, time, real_time)
+                VALUES
+                    (?1, ?2, ?3, ?4)
+                ON CONFLICT DO UPDATE SET
+                    time = ?3,
+                    real_time = ?4
+                "#,
+                user_id,
+                stream_id,
+                time,
+                real_time
+            )
             .execute(&mut tx)
             .await?;
         }
-
         tx.commit().await?;
+
         Ok(())
     }
 }

@@ -64,8 +64,8 @@ async fn make_preview(stream_id: i64, path: PathBuf) -> Result<()> {
 
     let db = DB.get().unwrap();
     sqlx::query!(
-        "INSERT INTO stream_previews(stream_id) values(?1)",
-        stream_id
+        "UPDATE streams SET preview_count = 1 WHERE id = ?1",
+        stream_id,
     )
     .execute(&db.pool)
     .await?;
@@ -86,20 +86,14 @@ async fn make_thumbnails(stream_id: i64, path: PathBuf) -> Result<()> {
     let items = create_thumbnails(&path, &thumbnail_path, &ts).await?;
 
     let db = DB.get().unwrap();
-    let mut tx = db.pool.begin().await?;
-
-    for (i, _) in items.iter().enumerate() {
-        let i = i as i64;
-        sqlx::query!(
-            "INSERT INTO stream_thumbnails(stream_id, thumb_index) values(?1, ?2)",
-            stream_id,
-            i
-        )
-        .execute(&mut tx)
-        .await?;
-    }
-
-    tx.commit().await?;
+    let thumbnail_count = items.len() as i64;
+    sqlx::query!(
+        "UPDATE streams SET thumbnail_count = ?1 WHERE id = ?2",
+        thumbnail_count,
+        stream_id,
+    )
+    .execute(&db.pool)
+    .await?;
 
     println!(
         "[{}] made {} thumbnails in {:?}",

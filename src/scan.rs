@@ -35,28 +35,13 @@ macro_rules! log_err {
 }
 
 pub async fn remove_thumbnails_and_preview(stream_id: i64) -> Result<()> {
-    {
-        let db = DB.get().unwrap();
-
-        let mut tx = db.pool.begin().await?;
-
-        // remove preview
-        sqlx::query!(
-            "DELETE FROM stream_previews WHERE stream_id = ?1",
-            stream_id,
-        )
-        .execute(&mut tx)
-        .await?;
-        // remove thumbnails
-        sqlx::query!(
-            "DELETE FROM stream_thumbnails WHERE stream_id = ?1",
-            stream_id,
-        )
-        .execute(&mut tx)
-        .await?;
-
-        tx.commit().await?;
-    }
+    let db = DB.get().unwrap();
+    sqlx::query!(
+        "UPDATE streams SET thumbnail_count=0, preview_count=0 WHERE id = ?1",
+        stream_id,
+    )
+    .execute(&db.pool)
+    .await?;
 
     log_err!(remove_file(StreamInfo::preview_path(stream_id)).await);
     log_err!(remove_dir_all(StreamInfo::thumbnails_path(stream_id)).await);
@@ -89,6 +74,8 @@ async fn handle_new_stream(
     let db = DB.get().unwrap();
     let sender = SENDER.get().unwrap();
 
+    let file_name = StreamFileName::from(file_name);
+
     let timestamp = match parse_filename(path) {
         Some(date) => date.timestamp(),
         None => {
@@ -104,53 +91,33 @@ async fn handle_new_stream(
         }
     };
 
+    let (datapoints, jumpcuts) = file_name
+        .get_extra_info_from_file()
+        .await?
+        .unwrap_or((vec![], vec![]));
+
     let stream_id: i64 = {
         let duration = f64::from(duration);
+        let has_chat = file_name.has_chat().await?;
+        let file_name = file_name.as_str();
+
+        let datapoints_json = serde_json::to_string(&datapoints)?;
+        let jumpcuts_json = serde_json::to_string(&jumpcuts)?;
+
         sqlx::query!(
-            "INSERT INTO streams(filename, filesize, ts, duration) values(?1, ?2, ?3, ?4)",
+            "INSERT INTO streams(filename, filesize, ts, duration, preview_count, thumbnail_count, has_chat, datapoints_json, jumpcuts_json) values(?1, ?2, ?3, ?4, 0, 0, ?5, ?6, ?7)",
             file_name,
             file_size,
             timestamp,
-            duration
+            duration,
+            has_chat,
+            datapoints_json,
+            jumpcuts_json,
         )
         .execute(&db.pool)
         .await?
         .last_insert_rowid()
     };
-
-    let (datapoints, jumpcuts) = StreamFileName::from(file_name)
-        .get_extra_info_from_file()
-        .await?
-        .unwrap_or((vec![], vec![]));
-
-    {
-        let mut tx = db.pool.begin().await?;
-
-        for datapoint in &datapoints {
-            sqlx::query!(
-                "INSERT INTO stream_datapoints(stream_id, timestamp, title, viewcount) VALUES(?, ?, ?, ?)",
-                stream_id,
-                datapoint.timestamp,
-                datapoint.title,
-                datapoint.viewcount,
-            )
-            .execute(&mut tx)
-            .await?;
-        }
-
-        for jumpcut in jumpcuts {
-            sqlx::query!(
-                "INSERT INTO stream_jumpcuts(stream_id, at, duration) VALUES(?, ?, ?)",
-                stream_id,
-                jumpcut.at,
-                jumpcut.duration,
-            )
-            .execute(&mut tx)
-            .await?;
-        }
-
-        tx.commit().await?;
-    }
 
     struct FoldState<'a> {
         games: Vec<GameFeature>,
@@ -164,7 +131,7 @@ async fn handle_new_stream(
                 games: vec![],
                 possible_games,
             },
-            |mut state: FoldState<'_>, datapoint| async {
+            |mut state: FoldState<'_>, datapoint| async move {
                 let last_item_same_game = state
                     .games
                     .last()
@@ -174,19 +141,15 @@ async fn handle_new_stream(
                     return state;
                 }
 
-                let game = state
-                    .possible_games
-                    .iter()
-                    .find(|g| {
-                        if let Some(twitch_name) = &g.twitch_name {
-                            twitch_name == &datapoint.game
-                        } else {
-                            false
-                        }
-                    })
-                    .cloned();
+                let game = state.possible_games.iter().find(|g| {
+                    if let Some(twitch_name) = &g.twitch_name {
+                        twitch_name == &datapoint.game
+                    } else {
+                        false
+                    }
+                });
                 let game = match game {
-                    Some(g) => g,
+                    Some(g) => g.clone(),
                     None => {
                         let game = db
                             .insert_possible_game(
@@ -203,8 +166,8 @@ async fn handle_new_stream(
 
                 let start_time = (datapoint.timestamp - timestamp).max(0) as f64;
                 let game = GameFeature::from_game_info(game, start_time);
-
                 state.games.push(game);
+
                 state
             },
         )
@@ -294,7 +257,7 @@ pub async fn scan_streams() -> Result<()> {
             db.get_streams()
                 .await?
                 .into_iter()
-                .map(|stream| (stream.file_name.into(), stream.file_size))
+                .map(|stream| (stream.info.file_name.into(), stream.info.file_size))
                 .collect()
         };
         let dir_map: HashMap<String, u64> = {

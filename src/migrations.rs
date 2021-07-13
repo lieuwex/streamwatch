@@ -26,7 +26,7 @@ async fn three() -> Result<()> {
 
     let streams = db.get_streams().await?;
     for stream in streams {
-        let (datapoints, jumpcuts) = match stream.file_name.get_extra_info_from_file().await? {
+        let (datapoints, jumpcuts) = match stream.info.file_name.get_extra_info_from_file().await? {
             None => continue,
             Some((datapoints, jumpcuts)) => (datapoints, jumpcuts),
         };
@@ -34,26 +34,24 @@ async fn three() -> Result<()> {
         let mut tx = db.pool.begin().await?;
 
         for datapoint in datapoints {
-            sqlx::query!(
+            sqlx::query(
                 "INSERT INTO stream_datapoints(stream_id, timestamp, title, viewcount) VALUES(?, ?, ?, ?)",
-                stream.id,
-                datapoint.timestamp,
-                datapoint.title,
-                datapoint.viewcount,
             )
+            .bind(stream.info.id)
+            .bind(datapoint.timestamp)
+            .bind(datapoint.title)
+            .bind(datapoint.viewcount)
             .execute(&mut tx)
             .await?;
         }
 
         for jumpcut in jumpcuts {
-            sqlx::query!(
-                "INSERT INTO stream_jumpcuts(stream_id, at, duration) VALUES(?, ?, ?)",
-                stream.id,
-                jumpcut.at,
-                jumpcut.duration,
-            )
-            .execute(&mut tx)
-            .await?;
+            sqlx::query("INSERT INTO stream_jumpcuts(stream_id, at, duration) VALUES(?, ?, ?)")
+                .bind(stream.info.id)
+                .bind(jumpcut.at)
+                .bind(jumpcut.duration)
+                .execute(&mut tx)
+                .await?;
         }
 
         tx.commit().await?;
@@ -84,11 +82,11 @@ async fn four() -> Result<()> {
     {
         let mut tx = db.pool.begin().await?;
         for stream in streams {
-            let has_chat = stream.file_name.has_chat().await?;
+            let has_chat = stream.info.file_name.has_chat().await?;
 
             sqlx::query("UPDATE streams SET has_chat = ? WHERE id = ?")
                 .bind(has_chat)
-                .bind(stream.id)
+                .bind(stream.info.id)
                 .execute(&mut tx)
                 .await?;
         }
