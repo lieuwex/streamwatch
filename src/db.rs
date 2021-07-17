@@ -1,5 +1,8 @@
+use crate::types::DbMessage;
 use crate::types::StreamJson;
-use crate::types::{GameInfo, GameItem, PersonInfo, StreamInfo, StreamProgress};
+use crate::types::{
+    GameFeature, GameInfo, GameItem, PersonInfo, StreamFileName, StreamInfo, StreamProgress,
+};
 
 use std::collections::HashMap;
 use std::time::Instant;
@@ -10,7 +13,7 @@ use sqlx::SqlitePool;
 
 use anyhow::Result;
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 
 use futures::TryStreamExt;
 
@@ -303,5 +306,49 @@ impl Database {
         tx.commit().await?;
 
         Ok(())
+    }
+
+    pub async fn get_messages(
+        &self,
+        stream_id: i64,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+    ) -> Result<Vec<DbMessage>> {
+        let start = start.timestamp();
+        let end = end.timestamp();
+
+        let query = sqlx::query(
+            r#"
+            SELECT
+                messages.id,
+                author_id,
+                users.username AS author_name,
+                time,
+                real_time,
+                content
+            FROM messages
+            JOIN users
+                ON users.id = author_id
+            WHERE stream_id = ?
+                AND ? <= time
+                AND time <= ?;
+            "#,
+        )
+        .bind(stream_id)
+        .bind(start)
+        .bind(end);
+
+        let items = query
+            .map(|row: SqliteRow| DbMessage {
+                id: row.get("id"),
+                author_id: row.get("author_id"),
+                author_name: row.get("author_name"),
+                message: row.get("content"),
+                time: row.get("time"),
+                real_time: row.get("real_time"),
+            })
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(items)
     }
 }

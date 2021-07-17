@@ -1,3 +1,4 @@
+mod db;
 mod file_reader;
 mod handler;
 mod types;

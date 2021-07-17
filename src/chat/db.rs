@@ -1,10 +1,11 @@
-use crate::{types::DbMessageJson, DB};
+use super::types::Item;
+use crate::DB;
 
 use anyhow::Result;
 
 use chrono::{DateTime, Utc};
 
-use super::types::Item;
+use serde_json::{json, value::to_raw_value, Value};
 
 pub async fn get_messages(
     stream_id: i64,
@@ -13,11 +14,26 @@ pub async fn get_messages(
 ) -> Result<Vec<Item>> {
     let items = {
         let db = DB.get().unwrap();
-        let db = db.lock().await;
         db.get_messages(stream_id, start, end).await?
     };
 
-    Ok(items.into_iter().map(|item| Item {
-        ts: item.message.time,
-    }))
+    let items = items
+        .into_iter()
+        .map(|item| {
+            let content = json!({
+                "type": "chat",
+                "tags": {
+                    "user-id": format!("db_{}", item.author_id),
+                    "display-name": item.author_name,
+                    "id": format!("db_{}", item.id),
+                },
+                "message": item.message,
+            });
+            Item {
+                ts: (item.time * 1000) as usize,
+                content: to_raw_value(&content).unwrap(),
+            }
+        })
+        .collect();
+    Ok(items)
 }

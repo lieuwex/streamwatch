@@ -1,3 +1,4 @@
+use super::db;
 use super::file_reader::FileReader;
 use super::types::Item;
 use crate::{
@@ -121,7 +122,7 @@ pub async fn handle_chat_request(
             Some(reader) => check!(reader.get_between(start, end).await),
             None => vec![],
         };
-        let db_messages = vec![];
+        let db_messages = check!(db::get_messages(stream_id, start, end).await);
         merge(file_messages, db_messages, |x| x.ts).unwrap()
     };
 

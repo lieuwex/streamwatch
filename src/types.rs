@@ -201,3 +201,13 @@ pub struct StreamProgress {
     pub time: f64,
     pub real_time: i64,
 }
+
+#[derive(Clone, Debug, Serialize)]
+pub struct DbMessage {
+    pub id: i64,
+    pub author_id: i64,
+    pub message: String,
+    pub time: i64,
+    pub real_time: i64,
+    pub author_name: String,
+}
