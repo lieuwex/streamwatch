@@ -19,8 +19,8 @@ pub async fn get_video_duration_in_secs(path: &Path) -> Result<f32> {
             "format=duration",
             "-of",
             "csv=p=0",
-            path.to_str().unwrap(),
         ])
+        .arg(path.as_os_str())
         .output()
         .await?;
 
@@ -66,12 +66,10 @@ pub async fn create_thumbnails(
                 "-ss",
                 &loc.to_string(),
                 "-i",
-                path.to_str().unwrap(),
-                "-frames:v",
-                "1",
-                "-y",
-                output.to_str().unwrap(),
             ])
+            .arg(path.as_os_str())
+            .args(&["-frames:v", "1", "-y"])
+            .arg(output.as_os_str())
             .spawn()?;
         handle.wait().await?;
 
@@ -112,7 +110,7 @@ pub async fn create_thumbnails(
 pub async fn create_preview(path: &Path, output: &Path, sections: &[(i32, i32)]) -> io::Result<()> {
     create_dir_all(output.ancestors().nth(1).unwrap()).await?;
 
-    let path_string = path.to_str().unwrap().to_owned();
+    let path_string = path.as_os_str();
 
     let mut cmd = Command::new("nice");
     cmd.args(&["-n10", "ffmpeg", "-hide_banner", "-loglevel", "error"]);
@@ -123,7 +121,7 @@ pub async fn create_preview(path: &Path, output: &Path, sections: &[(i32, i32)])
         cmd.arg("-t");
         cmd.arg((end - begin).to_string());
         cmd.arg("-i");
-        cmd.arg(&path_string);
+        cmd.arg(path_string);
     }
 
     let filter_complex = {
@@ -153,8 +151,8 @@ pub async fn create_preview(path: &Path, output: &Path, sections: &[(i32, i32)])
         "180k",
         "-an",
         "-y",
-        output.to_str().unwrap(),
     ]);
+    cmd.arg(output.as_os_str());
 
     let mut handle = cmd.spawn()?;
     handle.wait().await?;

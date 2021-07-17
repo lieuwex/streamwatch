@@ -21,10 +21,6 @@ use regex::Regex;
 
 use anyhow::bail;
 
-static FILE_STEM_REGEX_DATETIME: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}").unwrap());
-static FILE_STEM_REGEX_DATE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\d{4}-\d{2}-\d{2}").unwrap());
-
 macro_rules! log_err {
     ($item:expr) => {
         match $item {
@@ -50,6 +46,11 @@ pub async fn remove_thumbnails_and_preview(stream_id: i64) -> Result<()> {
 }
 
 fn parse_filename(path: &Path) -> Option<DateTime<Local>> {
+    static FILE_STEM_REGEX_DATETIME: Lazy<Regex> =
+        Lazy::new(|| Regex::new(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}").unwrap());
+    static FILE_STEM_REGEX_DATE: Lazy<Regex> =
+        Lazy::new(|| Regex::new(r"^\d{4}-\d{2}-\d{2}").unwrap());
+
     let stem = path.file_stem().unwrap().to_str().unwrap();
 
     let naive_datetime = FILE_STEM_REGEX_DATETIME
