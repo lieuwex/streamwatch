@@ -1,3 +1,4 @@
+use crate::types::ConversionProgress;
 use crate::util::AnyhowError;
 use crate::{chat::handle_chat_request, types::StreamJson};
 use crate::{check, DB, STREAMS_DIR};
@@ -9,6 +10,8 @@ use warp::http::StatusCode;
 use warp::{Filter, Reply};
 
 use anyhow::anyhow;
+
+use serde::Deserialize;
 
 macro_rules! reply_status {
     ($reply:expr, $code:expr) => {
@@ -23,6 +26,12 @@ macro_rules! reply_status {
 async fn streams() -> Result<warp::reply::Json, warp::Rejection> {
     let db = DB.get().unwrap();
     let streams: Vec<StreamJson> = check!(db.get_streams().await);
+    Ok(warp::reply::json(&streams))
+}
+
+async fn processing_streams() -> Result<warp::reply::Json, warp::Rejection> {
+    let db = DB.get().unwrap();
+    let streams: Vec<ConversionProgress> = check!(db.get_processing_streams().await);
     Ok(warp::reply::json(&streams))
 }
 
@@ -43,6 +52,59 @@ async fn replace_persons(
     let db = DB.get().unwrap();
     check!(db.replace_persons(stream_id, person_ids).await);
 
+    Ok(warp::reply().into_response())
+}
+
+async fn get_stream_hype(stream_id: i64) -> Result<warp::reply::Json, warp::Rejection> {
+    let db = DB.get().unwrap();
+    let datapoints = check!(db.get_hype_datapoints(stream_id).await);
+    Ok(warp::reply::json(&datapoints))
+}
+
+async fn get_stream_ratings(username: String) -> Result<warp::reply::Response, warp::Rejection> {
+    let db = DB.get().unwrap();
+
+    let user_id = match db.get_userid_by_username(&username).await {
+        None => return Ok(reply_status!(StatusCode::UNAUTHORIZED)),
+        Some(id) => id,
+    };
+
+    let map = check!(db.get_ratings(user_id).await);
+
+    Ok(reply_status!(warp::reply::json(&map), StatusCode::FOUND))
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct RateStreamBody {
+    pub username: String,
+    pub score: i8,
+}
+async fn rate_stream(
+    stream_id: i64,
+    RateStreamBody { username, score }: RateStreamBody,
+) -> Result<warp::reply::Response, warp::Rejection> {
+    if ![-1, 0, 1].contains(&score) {
+        return Ok(reply_status!(StatusCode::BAD_REQUEST));
+    }
+
+    let db = DB.get().unwrap();
+
+    let user_id = match db.get_userid_by_username(&username).await {
+        None => return Ok(reply_status!(StatusCode::UNAUTHORIZED)),
+        Some(id) => id,
+    };
+
+    check!(db.set_stream_rating(stream_id, user_id, score).await);
+
+    Ok(warp::reply().into_response())
+}
+
+async fn set_custom_title(
+    stream_id: i64,
+    title: String,
+) -> Result<warp::reply::Response, warp::Rejection> {
+    let db = DB.get().unwrap();
+    check!(db.set_custom_stream_title(stream_id, title).await);
     Ok(warp::reply().into_response())
 }
 
@@ -112,8 +174,12 @@ async fn rescan_streams() -> Result<impl warp::Reply, warp::Rejection> {
 pub async fn run_server() {
     warp::serve({
         let cors = warp::cors().allow_any_origin();
+        let log = warp::log("streamwatch");
 
         let compressed = (warp::get().and(warp::path!("streams")).and_then(streams))
+            .or(warp::get()
+                .and(warp::path!("processing"))
+                .and_then(processing_streams))
             .or(warp::patch()
                 .and(warp::path!("streams"))
                 .and_then(rescan_streams))
@@ -139,6 +205,17 @@ pub async fn run_server() {
                 .and(warp::path!("stream" / i64 / "chat"))
                 .and(warp::query())
                 .and_then(handle_chat_request))
+            .or(warp::get()
+                .and(warp::path!("stream" / i64 / "hype"))
+                .and_then(get_stream_hype))
+            .or(warp::post()
+                .and(warp::path!("stream" / i64 / "rate"))
+                .and(warp::body::json())
+                .and_then(rate_stream))
+            .or(warp::put()
+                .and(warp::path!("stream" / i64 / "title"))
+                .and(warp::body::json())
+                .and_then(set_custom_title))
             .or(warp::put()
                 .and(warp::path!("user" / String / "progress"))
                 .and(warp::body::json())
@@ -146,6 +223,9 @@ pub async fn run_server() {
             .or(warp::get()
                 .and(warp::path!("user" / String / "progress"))
                 .and_then(get_streams_progress))
+            .or(warp::get()
+                .and(warp::path!("user" / String / "ratings"))
+                .and_then(get_stream_ratings))
             .or(warp::path("video").and(warp::fs::file("./build/index.html")))
             .or(warp::path("login").and(warp::fs::file("./build/index.html")))
             .or(warp::path("static").and(warp::fs::dir("./build/static")))
@@ -157,7 +237,7 @@ pub async fn run_server() {
             .or(warp::path("preview").and(warp::fs::dir("./previews")))
             .or(warp::path("thumbnail").and(warp::fs::dir("./thumbnails")));
 
-        compressed.or(uncompressed).with(cors)
+        compressed.or(uncompressed).with(cors).with(log)
     })
     .run(([0, 0, 0, 0], 6070))
     .await;

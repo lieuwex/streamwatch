@@ -55,6 +55,10 @@ impl StreamFileName {
         &self.0
     }
 
+    pub fn stream_path(&self) -> PathBuf {
+        Path::new(STREAMS_DIR).join(&self.0)
+    }
+
     pub fn chat_file_path(&self) -> PathBuf {
         let mut res = Path::new(STREAMS_DIR).join(&self.0);
         res.set_extension("txt.zst");
@@ -140,6 +144,7 @@ pub struct StreamInfo {
     pub has_preview: bool,
     pub thumbnail_count: usize,
     pub has_chat: bool,
+    pub hype_average: Option<f32>,
 }
 
 impl StreamInfo {
@@ -210,4 +215,15 @@ pub struct DbMessage {
     pub time: i64,
     pub real_time: i64,
     pub author_name: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ConversionProgress {
+    pub id: i64,
+    pub filename: String,
+    pub ts: i64,
+    pub datapoint_title: Option<String>,
+    pub games: Option<String>,
+    pub progress: f32,
+    pub eta: Option<f32>,
 }

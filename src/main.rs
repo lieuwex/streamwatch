@@ -6,6 +6,7 @@
 mod chat;
 mod create_preview;
 mod db;
+mod hypegraph;
 mod job_handler;
 mod migrations;
 mod scan;
@@ -27,6 +28,8 @@ pub static DB: OnceCell<db::Database> = OnceCell::new();
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    env_logger::init();
+
     okky!(DB, db::Database::new().await?);
 
     migrations::run().await.unwrap();

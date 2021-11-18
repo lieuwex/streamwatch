@@ -1,3 +1,5 @@
+use crate::hypegraph::HypeDatapoint;
+use crate::types::ConversionProgress;
 use crate::types::DbMessage;
 use crate::types::StreamJson;
 use crate::types::{
@@ -7,9 +9,8 @@ use crate::types::{
 use std::collections::HashMap;
 use std::time::Instant;
 
-use sqlx::sqlite::SqliteRow;
-use sqlx::Row;
-use sqlx::SqlitePool;
+use sqlx::sqlite::{Sqlite, SqlitePool, SqliteRow};
+use sqlx::{Row, Transaction};
 
 use anyhow::Result;
 
@@ -55,6 +56,7 @@ impl Database {
                     x as usize
                 },
                 has_chat: row.get("has_chat"),
+                hype_average: row.get("hype_average"),
             },
 
             persons: {
@@ -96,6 +98,7 @@ impl Database {
             preview_count,
             thumbnail_count,
             has_chat,
+            hype_average,
             datapoints,
             jumpcuts,
             persons,
@@ -129,6 +132,7 @@ impl Database {
             preview_count,
             thumbnail_count,
             has_chat,
+            hype_average,
             datapoints,
             jumpcuts,
             persons,
@@ -157,6 +161,16 @@ impl Database {
             .execute(&self.pool)
             .await?;
         Ok(())
+    }
+
+    pub async fn get_processing_streams(&self) -> Result<Vec<ConversionProgress>> {
+        let items = sqlx::query_as!(
+            ConversionProgress,
+            "SELECT * FROM stream_conversion_progress"
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(items)
     }
 
     pub async fn get_possible_games(&self) -> Result<Vec<GameInfo>> {
@@ -350,5 +364,127 @@ impl Database {
             .fetch_all(&self.pool)
             .await?;
         Ok(items)
+    }
+
+    pub async fn get_ratings(&self, user_id: i64) -> Result<HashMap<i64, i8>> {
+        let map: HashMap<i64, i8> = sqlx::query!(
+            "SELECT stream_id,rating FROM stream_ratings WHERE user_id = ?1",
+            user_id
+        )
+        .map(|row| (row.stream_id, row.rating as i8))
+        .fetch(&self.pool)
+        .try_collect()
+        .await?;
+        Ok(map)
+    }
+
+    pub async fn set_stream_rating(&self, stream_id: i64, user_id: i64, score: i8) -> Result<()> {
+        if score == 0 {
+            sqlx::query!(
+                "DELETE FROM stream_ratings WHERE user_id = ?1 AND stream_id = ?2",
+                user_id,
+                stream_id
+            )
+            .execute(&self.pool)
+            .await?;
+
+            return Ok(());
+        }
+
+        let real_time = Utc::now().timestamp();
+
+        sqlx::query!(
+            r#"
+            INSERT INTO stream_ratings
+                (user_id, stream_id, rating, real_time)
+            VALUES
+                (?1, ?2, ?3, ?4)
+            ON CONFLICT DO UPDATE SET
+                rating = ?3,
+                real_time = ?4
+            "#,
+            user_id,
+            stream_id,
+            score,
+            real_time
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn set_custom_stream_title(&self, stream_id: i64, title: String) -> Result<()> {
+        if title.is_empty() {
+            sqlx::query!(
+                "DELETE FROM custom_stream_titles WHERE stream_id = ?1",
+                stream_id
+            )
+            .execute(&self.pool)
+            .await?;
+        } else {
+            sqlx::query!(
+                r#"
+                INSERT INTO custom_stream_titles
+                    (stream_id, title)
+                VALUES
+                    (?1, ?2)
+                ON CONFLICT DO UPDATE SET
+                    title = ?2
+                "#,
+                stream_id,
+                title
+            )
+            .execute(&self.pool)
+            .await?;
+        }
+
+        Ok(())
+    }
+
+    pub async fn get_hype_datapoints(&self, stream_id: i64) -> Result<Vec<HypeDatapoint>> {
+        let res = sqlx::query!(
+            "SELECT ts,loudness,chat_hype,hype FROM stream_hype_datapoints WHERE stream_id = ?",
+            stream_id
+        )
+        .map(|row| HypeDatapoint {
+            ts: row.ts,
+            loudness: row.loudness,
+            chat_hype: row.chat_hype,
+            hype: row.hype,
+        })
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(res)
+    }
+
+    pub async fn set_hype_datapoints(
+        &self,
+        stream_id: i64,
+        datapoints: Vec<HypeDatapoint>,
+    ) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+
+        sqlx::query!(
+            "DELETE FROM stream_hype_datapoints WHERE stream_id = ?1",
+            stream_id
+        )
+        .execute(&mut tx)
+        .await?;
+
+        for dp in datapoints {
+            sqlx::query!(
+                "INSERT INTO stream_hype_datapoints(stream_id, ts, loudness, chat_hype) VALUES(?1, ?2, ?3, ?4)",
+                stream_id,
+                dp.ts,
+                dp.loudness,
+                dp.chat_hype,
+            )
+            .execute(&mut tx)
+            .await?;
+        }
+
+        tx.commit().await?;
+        Ok(())
     }
 }
