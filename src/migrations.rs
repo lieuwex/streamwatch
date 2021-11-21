@@ -1,4 +1,4 @@
-use crate::{hypegraph::get_hype, DB};
+use crate::{loudness::get_loudness_points, DB};
 
 use anyhow::Result;
 
@@ -105,41 +105,9 @@ async fn four() -> Result<()> {
     Ok(())
 }
 
-async fn five() -> Result<()> {
-    const VERSION: i64 = 5;
-
-    if get_version().await? >= VERSION {
-        return Ok(());
-    }
-    println!("running migration {}", VERSION);
-
-    let db = DB.get().unwrap();
-
-    let streams = db.get_streams().await?;
-    for stream in streams {
-        let stream_id = stream.info.id;
-        println!("getting hype for stream {}", stream_id);
-        let hype = get_hype(stream.info).await?;
-        println!("updating hype in DB for stream {}", stream_id);
-        db.set_hype_datapoints(stream_id, hype).await?;
-    }
-
-    sqlx::query!(
-        "UPDATE meta SET value = ? WHERE key = 'schema_version'",
-        VERSION
-    )
-    .execute(&db.pool)
-    .await?;
-
-    Ok(())
-}
-
 pub async fn run() -> Result<()> {
     three().await?;
     four().await?;
-    tokio::task::spawn(async {
-        five().await.unwrap();
-    });
 
     Ok(())
 }

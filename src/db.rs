@@ -1,16 +1,14 @@
-use crate::hypegraph::HypeDatapoint;
-use crate::types::ConversionProgress;
-use crate::types::DbMessage;
-use crate::types::StreamJson;
+use crate::loudness::LoudnessDatapoint;
 use crate::types::{
-    GameFeature, GameInfo, GameItem, PersonInfo, StreamFileName, StreamInfo, StreamProgress,
+    ConversionProgress, DbMessage, GameInfo, GameItem, HypeDatapoint, PersonInfo, StreamInfo,
+    StreamJson, StreamProgress,
 };
 
 use std::collections::HashMap;
 use std::time::Instant;
 
-use sqlx::sqlite::{Sqlite, SqlitePool, SqliteRow};
-use sqlx::{Row, Transaction};
+use sqlx::sqlite::{SqlitePool, SqliteRow};
+use sqlx::Row;
 
 use anyhow::Result;
 
@@ -443,6 +441,8 @@ impl Database {
     }
 
     pub async fn get_hype_datapoints(&self, stream_id: i64) -> Result<Vec<HypeDatapoint>> {
+        Ok(vec![])
+        /*
         let res = sqlx::query!(
             "SELECT ts,loudness,chat_hype,hype FROM stream_hype_datapoints WHERE stream_id = ?",
             stream_id
@@ -456,17 +456,47 @@ impl Database {
         .fetch_all(&self.pool)
         .await?;
         Ok(res)
+        */
     }
 
-    pub async fn set_hype_datapoints(
+    pub async fn set_stream_decibels(
         &self,
         stream_id: i64,
-        datapoints: Vec<HypeDatapoint>,
+        datapoints: Vec<(i64, f32)>,
     ) -> Result<()> {
         let mut tx = self.pool.begin().await?;
 
         sqlx::query!(
-            "DELETE FROM stream_hype_datapoints WHERE stream_id = ?1",
+            "DELETE FROM stream_decibels WHERE stream_id = ?1",
+            stream_id
+        )
+        .execute(&mut tx)
+        .await?;
+
+        for (ts, db) in datapoints {
+            sqlx::query!(
+                "INSERT INTO stream_decibels(stream_id, ts, db) VALUES(?1, ?2, ?3)",
+                stream_id,
+                ts,
+                db,
+            )
+            .execute(&mut tx)
+            .await?;
+        }
+
+        tx.commit().await?;
+        Ok(())
+    }
+
+    pub async fn set_stream_loudness(
+        &self,
+        stream_id: i64,
+        datapoints: Vec<LoudnessDatapoint>,
+    ) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+
+        sqlx::query!(
+            "DELETE FROM stream_loudness WHERE stream_id = ?1",
             stream_id
         )
         .execute(&mut tx)
@@ -474,12 +504,46 @@ impl Database {
 
         for dp in datapoints {
             sqlx::query!(
-                "INSERT INTO stream_hype_datapoints(stream_id, ts, loudness, chat_hype) VALUES(?1, ?2, ?3, ?4)",
+                "INSERT INTO stream_loudness(stream_id, ts, momentary, short_term, integrated, lra) VALUES(?1, ?2, ?3, ?4, ?5, ?6)",
                 stream_id,
                 dp.ts,
-                dp.loudness,
-                dp.chat_hype,
+                dp.momentary,
+                dp.short_term,
+                dp.integrated,
+                dp.lra,
             )
+            .execute(&mut tx)
+            .await?;
+        }
+
+        tx.commit().await?;
+        Ok(())
+    }
+
+    pub async fn set_stream_chatspeed_datapoints<I>(
+        &self,
+        stream_id: i64,
+        datapoints: I,
+    ) -> Result<()>
+    where
+        I: IntoIterator<Item = (i64, i64)>,
+    {
+        let mut tx = self.pool.begin().await?;
+
+        sqlx::query!(
+            "DELETE FROM stream_chatspeed_datapoints WHERE stream_id = ?1",
+            stream_id
+        )
+        .execute(&mut tx)
+        .await?;
+
+        for (ts, messages) in datapoints {
+            sqlx::query!(
+            "INSERT INTO stream_chatspeed_datapoints(stream_id, ts, messages) VALUES(?1, ?2, ?3)",
+            stream_id,
+            ts,
+            messages,
+        )
             .execute(&mut tx)
             .await?;
         }

@@ -227,3 +227,11 @@ pub struct ConversionProgress {
     pub progress: f32,
     pub eta: Option<f32>,
 }
+
+#[derive(Clone, Debug, Serialize)]
+pub struct HypeDatapoint {
+    pub ts: i64,
+    pub loudness: Option<f32>,
+    pub chat_hype: Option<f32>,
+    pub hype: f32,
+}

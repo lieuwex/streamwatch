@@ -4,14 +4,17 @@
 #![feature(pattern)]
 
 mod chat;
+mod chatspeed;
 mod create_preview;
 mod db;
-mod hypegraph;
+//mod hypegraph;
 mod job_handler;
+mod loudness;
 mod migrations;
 mod scan;
 mod types;
 mod util;
+mod volume;
 mod web;
 
 use crate::chat::cache_pruner;

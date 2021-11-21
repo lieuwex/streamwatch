@@ -189,6 +189,8 @@ async fn handle_new_stream(
         stream_id,
         path: path.to_owned(),
     })?;
+    sender.send(Job::Loudness { stream_id })?;
+    sender.send(Job::Chatspeed { stream_id })?;
 
     Ok(())
 }

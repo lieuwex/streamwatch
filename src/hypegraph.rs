@@ -11,10 +11,12 @@ use anyhow::Result;
 
 use serde::Serialize;
 
+use regex::Regex;
+
 use crate::chat::FileReader;
 use crate::types::StreamInfo;
 
-async fn get_loudness(stream: StreamInfo) -> Result<Vec<(f32, f32)>> {
+pub async fn get_volume_points(stream: StreamInfo) -> Result<Vec<(f32, f32)>> {
     let mut cmd = {
         let mut cmd = Command::new("nice");
         cmd.args(&["-n10", "ffmpeg", "-i"]);
@@ -54,18 +56,53 @@ async fn get_loudness(stream: StreamInfo) -> Result<Vec<(f32, f32)>> {
         })
         .collect();
 
-    let sum: f32 = res.iter().map(|(_, x)| *x).sum();
-    let avg: f32 = sum / (res.len() as f32);
+    Ok(res)
+}
 
-    let res = res
-        .into_iter()
-        .map(|(pos, db)| (pos, 1.0 / (db / avg)))
+pub async fn get_loudness_points(stream: StreamInfo) -> Result<Vec<(f32, f32)>> {
+    let mut cmd = {
+        let mut cmd = Command::new("nice");
+        cmd.args(&["-n10", "ffmpeg"]);
+        cmd.args(&["-hide_banner", "-nostats"]);
+        cmd.arg("-i");
+        cmd.arg(stream.file_name.stream_path());
+        cmd.args(&["-vn", "-filter_complex", "abur128", "-f", "null", "-"]);
+        cmd
+    };
+
+    let output = {
+        let output = cmd.output().await?;
+        String::from_utf8(output.stderr)?
+    };
+
+    let re = Regex::new(r"([a-zA-Z]):\s*([-0-9.]+)").unwrap();
+    let res: Vec<(f32, f32)> = output
+        .lines()
+        .filter(|line| line.starts_with("[Parsed_ebur1280"))
+        .map(|line| {
+            let rest = line.splitn(2, ']').nth(1).unwrap();
+            let hash_map: HashMap<String, f32> = re
+                .captures_iter(rest)
+                .map(|cap| (cap[1].to_string(), cap[2].parse().unwrap()))
+                .collect();
+
+            let pos = *hash_map.get("t").unwrap();
+            let loudness = *hash_map.get("M").unwrap();
+
+            (pos, loudness)
+        })
         .collect();
 
     Ok(res)
 }
 
-async fn get_chat_hype(stream: StreamInfo) -> Result<Vec<(f32, f32)>> {
+async fn get_chat_hype(stream: StreamInfo) -> Result<Vec<(i64, f32)>> {
+    return Ok(vec![]);
+    if !stream.has_chat {
+        return Ok(vec![]);
+    }
+
+    let duration = stream.duration as usize;
     let timestamp = (stream.timestamp * 1_000) as usize;
     let (start, end) = (
         stream.datetime(),
@@ -73,90 +110,85 @@ async fn get_chat_hype(stream: StreamInfo) -> Result<Vec<(f32, f32)>> {
     );
 
     let items = FileReader::new(stream)
-        .await
-        .unwrap()
+        .await?
         .get_between(start, end)
         .await?;
 
-    let res = (0..items.len())
-        .map(|i| {
-            let (start, end) = {
-                let i = i as i64;
-                let start = (i - 5).max(0);
-                let end = (i + 5).min(items.len() as i64 - 1);
+    let res = (0..=duration)
+        .map(|s| {
+            let s = s as i64;
+            let start = (s - 10).max(0);
+            let end = (s + 10).max(duration as i64);
 
-                (start as usize, end as usize)
-            };
-            let count = end - start + 1;
-
-            let pos = (items[i].ts - timestamp) as f32 / 1e3f32;
-
-            let messages_per_second = {
-                let (start_ts, end_ts) = (items[start].ts, items[end].ts);
-                let delta = (end_ts - start_ts) as f32 / 1e3;
-                let time_per_message = delta / count as f32;
-                1.0 / time_per_message
-            };
-
-            (pos, messages_per_second)
+            let total_time = (end - start + 1) as f32;
+            let n_messages = items
+                .iter()
+                .filter(|item| {
+                    let ts = item.ts as i64;
+                    start <= ts && ts <= end
+                })
+                .count() as f32;
+            (s, n_messages / total_time)
         })
         .collect();
 
     Ok(res)
 }
 
-#[derive(Clone, Debug, Serialize)]
-pub struct HypeDatapoint {
+pub struct HypeInfoDatapoint {
     pub ts: i64,
+    pub decibels: Option<f32>,
     pub loudness: Option<f32>,
-    pub chat_hype: Option<f32>,
-    pub hype: f32,
+    pub messages_per_second: Option<f32>,
 }
 
-pub async fn get_hype(stream: StreamInfo) -> Result<Vec<HypeDatapoint>> {
+pub async fn get_hype(stream: StreamInfo) -> Result<Vec<HypeInfoDatapoint>> {
     let ts = stream.timestamp;
     let duration = stream.duration as usize;
 
-    let loudness: HashMap<i64, f32> = {
-        let loudness = get_loudness(stream.clone()).await?;
-        loudness
-            .into_iter()
-            .group_by(|(pos, _)| pos.floor())
-            .into_iter()
-            .map(|(pos, xs)| {
+    let volume_points: HashMap<i64, f32> = get_volume_points(stream.clone())
+        .await?
+        .into_iter()
+        .group_by(|(pos, _)| pos.round())
+        .into_iter()
+        .map(|(pos, xs)| {
+            let avg = {
                 let xs: Vec<_> = xs.map(|(_, x)| x).collect();
                 let len = xs.len() as f32;
-                let avg = xs.into_iter().sum::<f32>() / len;
-                (pos as i64, avg)
-            })
-            .collect()
-    };
+                let sum = xs.into_iter().sum::<f32>();
+                sum / len
+            };
+            (pos as i64, avg)
+        })
+        .collect();
 
-    let chat_hype: HashMap<i64, f32> = {
-        let chat_hype = get_chat_hype(stream).await?;
-
-        chat_hype
-            .into_iter()
-            .group_by(|(pos, _)| pos.floor())
-            .into_iter()
-            .map(|(pos, xs)| {
+    let loudness_points: HashMap<i64, f32> = get_loudness_points(stream.clone())
+        .await?
+        .into_iter()
+        .group_by(|(pos, _)| pos.round())
+        .into_iter()
+        .map(|(pos, xs)| {
+            let avg = {
                 let xs: Vec<_> = xs.map(|(_, x)| x).collect();
                 let len = xs.len() as f32;
-                let avg = xs.into_iter().sum::<f32>() / len;
-                (pos as i64, avg)
-            })
-            .collect()
-    };
+                let sum = xs.into_iter().sum::<f32>();
+                sum / len
+            };
+            (pos as i64, avg)
+        })
+        .collect();
+
+    let chat_hype_points: HashMap<i64, f32> = get_chat_hype(stream).await?.into_iter().collect();
 
     let res = (0..=duration)
         .map(|i| {
             let i = i as i64;
 
-            HypeDatapoint {
+            HypeInfoDatapoint {
                 ts: ts + i,
-                loudness: loudness.get(&i).cloned(),
-                chat_hype: chat_hype.get(&i).cloned(),
-                hype: 0.0,
+                decibels: volume_points.get(&i).cloned(),
+                loudness: loudness_points.get(&i).cloned(),
+                messages_per_second: chat_hype_points.get(&i).cloned(),
             }
         })
         .collect();
