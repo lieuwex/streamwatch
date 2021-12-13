@@ -143,6 +143,10 @@ async fn update_chatspeed(stream_id: i64) -> Result<()> {
     let db = DB.get().unwrap();
 
     let stream = expect_stream(stream_id).await?;
+    if !stream.info.has_chat {
+        return Ok(());
+    }
+
     let chatspeed = get_chatspeed_points(stream.info)
         .await?
         .into_iter()
