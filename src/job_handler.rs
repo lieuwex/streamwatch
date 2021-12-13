@@ -173,9 +173,8 @@ async fn job_watcher(receiver: Arc<sync::Mutex<JobReceiver>>) {
             Job::Loudness { stream_id } => update_loudness(stream_id).await,
             Job::Chatspeed { stream_id } => update_chatspeed(stream_id).await,
         };
-        match res {
-            Ok(_) => {}
-            Err(e) => eprintln!("error while executing job: {:?}", e),
+        if let Err(e) = res {
+            eprintln!("error while executing job: {:?}", e);
         }
     }
 }
