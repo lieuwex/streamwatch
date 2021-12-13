@@ -441,22 +441,28 @@ impl Database {
     }
 
     pub async fn get_hype_datapoints(&self, stream_id: i64) -> Result<Vec<HypeDatapoint>> {
-        Ok(vec![])
-        /*
-        let res = sqlx::query!(
-            "SELECT ts,loudness,chat_hype,hype FROM stream_hype_datapoints WHERE stream_id = ?",
-            stream_id
+        let res = sqlx::query(
+            "SELECT ts,loudness,messages FROM stream_hype_datapoints_sad WHERE stream_id = ?",
         )
+        .bind(stream_id)
         .map(|row| HypeDatapoint {
-            ts: row.ts,
-            loudness: row.loudness,
-            chat_hype: row.chat_hype,
-            hype: row.hype,
+            ts: row.get("ts"),
+            loudness: row.get("loudness"),
+            chat_hype: row.get("messages"),
+            hype: {
+                let loudness: Option<f32> = row.get("loudness");
+                let messages: Option<i32> = row.get("messages");
+
+                loudness
+                    .map(|m| 1.0 / 2.0 * (1.0 + (5.0 * (m + 75.0 / 2.0) / 80.0).tanh()))
+                    .unwrap_or(0.0)
+                    + messages.map(|m| (m as f32) / 5.0).unwrap_or(0.0)
+            },
         })
         .fetch_all(&self.pool)
         .await?;
+
         Ok(res)
-        */
     }
 
     pub async fn set_stream_decibels(

@@ -232,6 +232,6 @@ pub struct ConversionProgress {
 pub struct HypeDatapoint {
     pub ts: i64,
     pub loudness: Option<f32>,
-    pub chat_hype: Option<f32>,
+    pub chat_hype: Option<i32>,
     pub hype: f32,
 }
