@@ -5,6 +5,8 @@ use crate::{check, DB, STREAMS_DIR};
 use crate::{scan::scan_streams, types::GameItem};
 
 use std::collections::HashMap;
+use std::net::IpAddr;
+use std::str::FromStr;
 
 use warp::http::StatusCode;
 use warp::{Filter, Reply};
@@ -172,7 +174,7 @@ async fn rescan_streams() -> Result<impl warp::Reply, warp::Rejection> {
 }
 
 pub async fn run_server() {
-    warp::serve({
+    let endpoints = {
         let cors = warp::cors().allow_any_origin();
         let log = warp::log("streamwatch");
 
@@ -238,7 +240,8 @@ pub async fn run_server() {
             .or(warp::path("thumbnail").and(warp::fs::dir("./thumbnails")));
 
         compressed.or(uncompressed).with(cors).with(log)
-    })
-    .run(([0, 0, 0, 0], 6070))
-    .await;
+    };
+
+    let addr = IpAddr::from_str("::0").unwrap();
+    warp::serve(endpoints).run((addr, 6070)).await;
 }
