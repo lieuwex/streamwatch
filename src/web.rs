@@ -1,5 +1,6 @@
 use crate::types::ConversionProgress;
 use crate::util::AnyhowError;
+use crate::watchparty::{get_watch_parties, watch_party_ws};
 use crate::{chat::handle_chat_request, types::StreamJson};
 use crate::{check, DB, STREAMS_DIR};
 use crate::{scan::scan_streams, types::GameItem};
@@ -228,8 +229,17 @@ pub async fn run_server() {
             .or(warp::get()
                 .and(warp::path!("user" / String / "ratings"))
                 .and_then(get_stream_ratings))
+            .or(warp::get()
+                .and(warp::path!("parties"))
+                .and_then(get_watch_parties))
+            .or(warp::get()
+                .and(warp::path!("party" / "ws"))
+                .and(warp::query())
+                .and(warp::ws())
+                .and_then(watch_party_ws))
             .or(warp::path("video").and(warp::fs::file("./build/index.html")))
             .or(warp::path("login").and(warp::fs::file("./build/index.html")))
+            .or(warp::path("watchparty").and(warp::fs::file("./build/index.html")))
             .or(warp::path("static").and(warp::fs::dir("./build/static")))
             .or(warp::path::end().and(warp::fs::file("./build/index.html")))
             .or(warp::path::end().and(warp::fs::dir("./build")))

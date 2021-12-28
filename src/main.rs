@@ -15,6 +15,7 @@ mod scan;
 mod types;
 mod util;
 mod volume;
+mod watchparty;
 mod web;
 
 use crate::chat::cache_pruner;
