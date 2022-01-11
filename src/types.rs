@@ -149,16 +149,11 @@ pub struct StreamInfo {
 
 impl StreamInfo {
     pub fn preview_path(id: i64) -> PathBuf {
-        Path::new("./previews")
-            .join(id.to_string())
-            .join("preview.webm")
+        Path::new("./previews").join(id.to_string() + ".webm")
     }
     pub fn preview_url(&self) -> Option<String> {
-        if self.has_preview {
-            Some(format!("/preview/{}/preview.webm", self.id))
-        } else {
-            None
-        }
+        self.has_preview
+            .then(|| format!("/preview/{}.webm", self.id))
     }
 
     pub fn thumbnails_path(id: i64) -> PathBuf {
