@@ -230,3 +230,14 @@ pub struct HypeDatapoint {
     pub chat_hype: Option<i32>,
     pub hype: f32,
 }
+
+#[derive(Clone, Debug, Serialize)]
+pub struct Clip {
+    pub id: i64,
+    pub author_id: i64,
+    pub stream_id: i64,
+    pub start_time: i64, // in seconds
+    pub duration: i64,   // in seconds
+    pub title: Option<String>,
+    pub created_at: i64,
+}

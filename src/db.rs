@@ -1,6 +1,6 @@
 use crate::loudness::LoudnessDatapoint;
 use crate::types::{
-    ConversionProgress, DbMessage, GameInfo, GameItem, HypeDatapoint, PersonInfo, StreamInfo,
+    Clip, ConversionProgress, DbMessage, GameInfo, GameItem, HypeDatapoint, PersonInfo, StreamInfo,
     StreamJson, StreamProgress,
 };
 
@@ -556,5 +556,27 @@ impl Database {
 
         tx.commit().await?;
         Ok(())
+    }
+
+    pub async fn get_clips(&self, stream_id: Option<i64>) -> Result<Vec<Clip>> {
+        let query = if let Some(stream_id) = stream_id {
+            sqlx::query("SELECT * FROM clips WHERE stream_id = ?").bind(stream_id)
+        } else {
+            sqlx::query("SELECT * FROM clips")
+        };
+
+        let items = query
+            .map(|row| Clip {
+                id: row.get("id"),
+                author_id: row.get("author_id"),
+                stream_id: row.get("stream_id"),
+                start_time: row.get("start_time"),
+                duration: row.get("duration"),
+                title: row.get("title"),
+                created_at: row.get("created_at"),
+            })
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(items)
     }
 }

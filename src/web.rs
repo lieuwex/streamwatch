@@ -174,12 +174,24 @@ async fn rescan_streams() -> Result<impl warp::Reply, warp::Rejection> {
     Ok("scanned streams")
 }
 
+async fn get_all_clips() -> Result<warp::reply::Json, warp::Rejection> {
+    let db = DB.get().unwrap();
+    let clips = check!(db.get_clips(None).await);
+    Ok(warp::reply::json(&clips))
+}
+
+async fn get_stream_clips(stream_id: i64) -> Result<warp::reply::Json, warp::Rejection> {
+    let db = DB.get().unwrap();
+    let clips = check!(db.get_clips(Some(stream_id)).await);
+    Ok(warp::reply::json(&clips))
+}
+
 pub async fn run_server() {
     let endpoints = {
         let cors = warp::cors().allow_any_origin();
         let log = warp::log("streamwatch");
 
-        let compressed = (warp::get().and(warp::path!("streams")).and_then(streams))
+        let dynamic_paths = (warp::get().and(warp::path!("streams")).and_then(streams))
             .or(warp::get()
                 .and(warp::path!("processing"))
                 .and_then(processing_streams))
@@ -237,12 +249,21 @@ pub async fn run_server() {
                 .and(warp::query())
                 .and(warp::ws())
                 .and_then(watch_party_ws))
-            .or(warp::path("video").and(warp::fs::file("./build/index.html")))
+            .or(warp::get()
+                .and(warp::path!("clips"))
+                .and_then(get_all_clips))
+            .or(warp::get()
+                .and(warp::path!("clips" / i64))
+                .and_then(get_stream_clips));
+        let static_paths = warp::path("video")
+            .and(warp::fs::file("./build/index.html"))
             .or(warp::path("login").and(warp::fs::file("./build/index.html")))
             .or(warp::path("watchparty").and(warp::fs::file("./build/index.html")))
             .or(warp::path("static").and(warp::fs::dir("./build/static")))
             .or(warp::path::end().and(warp::fs::file("./build/index.html")))
-            .or(warp::path::end().and(warp::fs::dir("./build")))
+            .or(warp::path::end().and(warp::fs::dir("./build")));
+        let compressed = dynamic_paths
+            .or(static_paths)
             .with(warp::compression::gzip());
 
         let uncompressed = (warp::path("stream").and(warp::fs::dir(STREAMS_DIR)))
