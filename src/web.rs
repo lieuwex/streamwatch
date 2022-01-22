@@ -1,9 +1,9 @@
-use crate::types::ConversionProgress;
+use crate::chat::handle_chat_request;
+use crate::scan::scan_streams;
+use crate::types::{ConversionProgress, CreateClipRequest, GameItem, StreamJson};
 use crate::util::AnyhowError;
 use crate::watchparty::{get_watch_parties, watch_party_ws};
-use crate::{chat::handle_chat_request, types::StreamJson};
 use crate::{check, DB, STREAMS_DIR};
-use crate::{scan::scan_streams, types::GameItem};
 
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -252,6 +252,10 @@ pub async fn run_server() {
             .or(warp::get()
                 .and(warp::path!("clips"))
                 .and_then(get_all_clips))
+            .or(warp::post()
+                .and(warp::path!("clips"))
+                .and(warp::body::json())
+                .and_then(create_clip))
             .or(warp::get()
                 .and(warp::path!("clips" / i64))
                 .and_then(get_stream_clips));

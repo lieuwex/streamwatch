@@ -231,6 +231,14 @@ pub struct HypeDatapoint {
     pub hype: f32,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+pub struct CreateClipRequest {
+    pub author_username: String,
+    pub stream_id: i64,
+    pub start_time: i64, // in seconds
+    pub duration: i64,   // in seconds
+    pub title: Option<String>,
+}
 #[derive(Clone, Debug, Serialize)]
 pub struct Clip {
     pub id: i64,

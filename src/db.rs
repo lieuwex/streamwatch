@@ -1,7 +1,7 @@
 use crate::loudness::LoudnessDatapoint;
 use crate::types::{
-    Clip, ConversionProgress, DbMessage, GameInfo, GameItem, HypeDatapoint, PersonInfo, StreamInfo,
-    StreamJson, StreamProgress,
+    Clip, ConversionProgress, CreateClipRequest, DbMessage, GameInfo, GameItem, HypeDatapoint,
+    PersonInfo, StreamInfo, StreamJson, StreamProgress,
 };
 
 use std::collections::HashMap;
@@ -578,5 +578,40 @@ impl Database {
             .fetch_all(&self.pool)
             .await?;
         Ok(items)
+    }
+
+    pub async fn create_clip(
+        &self,
+        author_id: i64,
+        clip_request: CreateClipRequest,
+    ) -> Result<Clip> {
+        let created_at = Utc::now().timestamp();
+
+        let res = sqlx::query!(
+            r#"
+            INSERT INTO clips
+                (author_id, stream_id, start_time, duration, title, created_at)
+            VALUES
+                (?1, ?2, ?3, ?4, ?5, ?6)
+            "#,
+            author_id,
+            clip_request.stream_id,
+            clip_request.start_time,
+            clip_request.duration,
+            clip_request.title,
+            created_at,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(Clip {
+            id: res.last_insert_rowid(),
+            author_id,
+            stream_id: clip_request.stream_id,
+            start_time: clip_request.start_time,
+            duration: clip_request.duration,
+            title: clip_request.title,
+            created_at,
+        })
     }
 }
