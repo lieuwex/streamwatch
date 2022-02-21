@@ -1,6 +1,5 @@
 use super::types::Item;
 use crate::types::StreamInfo;
-use crate::util::split_tuple;
 
 use chrono::{DateTime, Utc};
 
@@ -30,7 +29,9 @@ impl FileReader {
     }
 
     fn parse_line(line: &str) -> Result<(DateTime<Utc>, &str), Error> {
-        let (date, json) = split_tuple(line, ' ').ok_or_else(|| anyhow!("failed to parse line"))?;
+        let (date, json) = line
+            .split_once(' ')
+            .ok_or_else(|| anyhow!("failed to parse line"))?;
         let date = DateTime::parse_from_rfc3339(date)?.with_timezone(&Utc);
         Ok((date, json))
     }
