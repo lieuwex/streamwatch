@@ -30,14 +30,13 @@ pub async fn get_video_duration_in_secs(path: &Path) -> Result<f32> {
 
 fn get_sections(duration: f32) -> Vec<(i32, i32)> {
     let count = std::cmp::max((duration / 900.0) as usize, 1);
-
-    let mut vec = Vec::with_capacity(count);
-    for i in 1..=count {
-        let frac = (i as f32) / ((count + 1) as f32);
-        let start = (frac * duration) as i32;
-        vec.push((start, start + SECTION_DURATION_SECS));
-    }
-    vec
+    (1..=count)
+        .map(|i| {
+            let frac = (i as f32) / ((count + 1) as f32);
+            let start = (frac * duration) as i32;
+            (start, start + SECTION_DURATION_SECS)
+        })
+        .collect()
 }
 
 pub async fn get_sections_from_file(path: &Path) -> Result<Vec<(i32, i32)>> {
