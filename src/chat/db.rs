@@ -5,7 +5,7 @@ use anyhow::Result;
 
 use chrono::{DateTime, Utc};
 
-use serde_json::{json, value::to_raw_value, Value};
+use serde_json::{json, value::to_raw_value};
 
 pub async fn get_messages(
     stream_id: i64,

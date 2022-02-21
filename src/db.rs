@@ -60,23 +60,23 @@ impl Database {
             persons: {
                 let json: Option<String> = row.get("persons");
                 json.map(|json| serde_json::from_str(&json).unwrap())
-                    .unwrap_or(vec![])
+                    .unwrap_or_default()
             },
             games: {
                 let json: Option<String> = row.get("games");
                 json.map(|json| serde_json::from_str(&json).unwrap())
-                    .unwrap_or(vec![])
+                    .unwrap_or_default()
             },
 
             datapoints: {
                 let json: Option<String> = row.get("datapoints");
                 json.map(|json| serde_json::from_str(&json).unwrap())
-                    .unwrap_or(vec![])
+                    .unwrap_or_default()
             },
             jumpcuts: {
                 let json: Option<String> = row.get("jumpcuts");
                 json.map(|json| serde_json::from_str(&json).unwrap())
-                    .unwrap_or(vec![])
+                    .unwrap_or_default()
             },
         }
     }

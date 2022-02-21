@@ -1,4 +1,4 @@
-use std::{ascii::AsciiExt, collections::HashMap, iter::Sum, panic};
+use std::{collections::HashMap, iter::Sum, panic};
 
 use tokio::process::Command;
 

@@ -15,7 +15,7 @@ use warp::{
     Reply,
 };
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 struct PartyInfo {
     id: String,
