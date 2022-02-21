@@ -1,7 +1,5 @@
 #![feature(iter_intersperse)]
 #![feature(hash_drain_filter)]
-#![feature(destructuring_assignment)]
-#![feature(pattern)]
 
 mod chat;
 mod chatspeed;

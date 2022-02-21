@@ -2,7 +2,7 @@ with (import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/e91ed600269
 
 pkgs.mkShell {
 	buildInputs = [
-		rust-bin.nightly."2021-07-03".complete
+		rust-bin.nightly."2022-02-21".complete
 		openssl
 		pkg-config
 	];
