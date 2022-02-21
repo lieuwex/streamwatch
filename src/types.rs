@@ -243,6 +243,7 @@ pub struct CreateClipRequest {
 pub struct Clip {
     pub id: i64,
     pub author_id: i64,
+    pub author_username: String,
     pub stream_id: i64,
     pub start_time: i64, // in seconds
     pub duration: i64,   // in seconds

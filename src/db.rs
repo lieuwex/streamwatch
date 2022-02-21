@@ -314,6 +314,21 @@ impl Database {
             )
             .execute(&mut tx)
             .await?;
+
+            sqlx::query!(
+                r#"
+                INSERT INTO stream_progress_updates
+                    (user_id, stream_id, time, real_time)
+                VALUES
+                    (?1, ?2, ?3, ?4)
+                "#,
+                user_id,
+                stream_id,
+                time,
+                real_time
+            )
+            .execute(&mut tx)
+            .await?;
         }
         tx.commit().await?;
 
@@ -559,16 +574,22 @@ impl Database {
     }
 
     pub async fn get_clips(&self, stream_id: Option<i64>) -> Result<Vec<Clip>> {
+        let mut sql = String::from(
+            "SELECT clips.*,users.username FROM clips JOIN users ON users.id=clips.author_id",
+        );
+
         let query = if let Some(stream_id) = stream_id {
-            sqlx::query("SELECT * FROM clips WHERE stream_id = ?").bind(stream_id)
+            sql += " WHERE stream_id = ?";
+            sqlx::query(&sql).bind(stream_id)
         } else {
-            sqlx::query("SELECT * FROM clips")
+            sqlx::query(&sql)
         };
 
         let items = query
             .map(|row| Clip {
                 id: row.get("id"),
                 author_id: row.get("author_id"),
+                author_username: row.get("username"),
                 stream_id: row.get("stream_id"),
                 start_time: row.get("start_time"),
                 duration: row.get("duration"),
@@ -607,6 +628,7 @@ impl Database {
         Ok(Clip {
             id: res.last_insert_rowid(),
             author_id,
+            author_username: clip_request.author_username,
             stream_id: clip_request.stream_id,
             start_time: clip_request.start_time,
             duration: clip_request.duration,
