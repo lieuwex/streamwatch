@@ -186,6 +186,24 @@ async fn get_stream_clips(stream_id: i64) -> Result<warp::reply::Json, warp::Rej
     Ok(warp::reply::json(&clips))
 }
 
+async fn create_clip(
+    clip_request: CreateClipRequest,
+) -> Result<warp::reply::Json, warp::Rejection> {
+    let db = DB.get().unwrap();
+
+    let n: Option<String> = None; // HACK
+    let user_id = match db
+        .get_userid_by_username(&clip_request.author_username)
+        .await
+    {
+        None => return Ok(warp::reply::json(&n)),
+        Some(id) => id,
+    };
+
+    let clip = check!(db.create_clip(user_id, clip_request).await);
+    Ok(warp::reply::json(&clip))
+}
+
 pub async fn run_server() {
     let endpoints = {
         let cors = warp::cors().allow_any_origin();
