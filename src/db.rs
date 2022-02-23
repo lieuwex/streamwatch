@@ -469,7 +469,7 @@ impl Database {
                 let messages: Option<i32> = row.get("messages");
 
                 loudness
-                    .map(|m| 1.0 / 2.0 * (1.0 + (5.0 * (m + 75.0 / 2.0) / 80.0).tanh()))
+                    .map(|m| 1.0 / 8.0 * (1.0 + (5.0 * (m + 75.0 / 2.0) / 80.0).tanh()))
                     .unwrap_or(0.0)
                     + messages.map(|m| (m as f32) / 5.0).unwrap_or(0.0)
             },
