@@ -268,6 +268,16 @@ impl Database {
             .ok()
     }
 
+    pub async fn check_password(&self, user_id: i64, password: &str) -> Result<bool> {
+        let db_pass: Option<String> =
+            sqlx::query!("SELECT password FROM users WHERE id = ?1", user_id)
+                .map(|row| row.password)
+                .fetch_one(&self.pool)
+                .await?;
+
+        Ok(db_pass.map(|db_pass| password == db_pass).unwrap_or(true))
+    }
+
     pub async fn get_streams_progress(&self, user_id: i64) -> Result<HashMap<i64, StreamProgress>> {
         let res: sqlx::Result<HashMap<i64, StreamProgress>> = sqlx::query!(
             "SELECT stream_id,time,real_time FROM stream_progress WHERE user_id = ?1",

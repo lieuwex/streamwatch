@@ -26,6 +26,11 @@ macro_rules! reply_status {
     };
 }
 
+#[derive(Clone, Debug, Deserialize)]
+pub struct PasswordQuery {
+    password: String,
+}
+
 async fn streams() -> Result<warp::reply::Json, warp::Rejection> {
     let db = DB.get().unwrap();
     let streams: Vec<StreamJson> = check!(db.get_streams().await);
@@ -64,13 +69,19 @@ async fn get_stream_hype(stream_id: i64) -> Result<warp::reply::Json, warp::Reje
     Ok(warp::reply::json(&datapoints))
 }
 
-async fn get_stream_ratings(username: String) -> Result<warp::reply::Response, warp::Rejection> {
+async fn get_stream_ratings(
+    username: String,
+    password: PasswordQuery,
+) -> Result<warp::reply::Response, warp::Rejection> {
     let db = DB.get().unwrap();
 
     let user_id = match db.get_userid_by_username(&username).await {
         None => return Ok(reply_status!(StatusCode::UNAUTHORIZED)),
         Some(id) => id,
     };
+    if !check!(db.check_password(user_id, &password.password).await) {
+        return Ok(reply_status!(StatusCode::UNAUTHORIZED));
+    }
 
     let map = check!(db.get_ratings(user_id).await);
 
@@ -84,6 +95,7 @@ struct RateStreamBody {
 }
 async fn rate_stream(
     stream_id: i64,
+    password: PasswordQuery,
     RateStreamBody { username, score }: RateStreamBody,
 ) -> Result<warp::reply::Response, warp::Rejection> {
     if ![-1, 0, 1].contains(&score) {
@@ -96,6 +108,9 @@ async fn rate_stream(
         None => return Ok(reply_status!(StatusCode::UNAUTHORIZED)),
         Some(id) => id,
     };
+    if !check!(db.check_password(user_id, &password.password).await) {
+        return Ok(reply_status!(StatusCode::UNAUTHORIZED));
+    }
 
     check!(db.set_stream_rating(stream_id, user_id, score).await);
 
@@ -111,13 +126,19 @@ async fn set_custom_title(
     Ok(warp::reply().into_response())
 }
 
-async fn get_streams_progress(username: String) -> Result<warp::reply::Response, warp::Rejection> {
+async fn get_streams_progress(
+    username: String,
+    password: PasswordQuery,
+) -> Result<warp::reply::Response, warp::Rejection> {
     let db = DB.get().unwrap();
 
     let user_id = match db.get_userid_by_username(&username).await {
         None => return Ok(reply_status!(StatusCode::UNAUTHORIZED)),
         Some(id) => id,
     };
+    if !check!(db.check_password(user_id, &password.password).await) {
+        return Ok(reply_status!(StatusCode::UNAUTHORIZED));
+    }
 
     let map = check!(db.get_streams_progress(user_id).await);
 
@@ -125,6 +146,7 @@ async fn get_streams_progress(username: String) -> Result<warp::reply::Response,
 }
 async fn set_streams_progress(
     username: String,
+    password: PasswordQuery,
     progress: HashMap<i64, f64>,
 ) -> Result<warp::reply::Response, warp::Rejection> {
     let db = DB.get().unwrap();
@@ -133,6 +155,9 @@ async fn set_streams_progress(
         None => return Ok(reply_status!(StatusCode::UNAUTHORIZED)),
         Some(id) => id,
     };
+    if !check!(db.check_password(user_id, &password.password).await) {
+        return Ok(reply_status!(StatusCode::UNAUTHORIZED));
+    }
 
     check!(db.update_streams_progress(user_id, progress).await);
 
@@ -187,6 +212,7 @@ async fn get_stream_clips(stream_id: i64) -> Result<warp::reply::Json, warp::Rej
 }
 
 async fn create_clip(
+    password: PasswordQuery,
     clip_request: CreateClipRequest,
 ) -> Result<warp::reply::Json, warp::Rejection> {
     let db = DB.get().unwrap();
@@ -199,6 +225,9 @@ async fn create_clip(
         None => return Ok(warp::reply::json(&n)),
         Some(id) => id,
     };
+    if !check!(db.check_password(user_id, &password.password).await) {
+        return Ok(warp::reply::json(&n));
+    }
 
     let clip = check!(db.create_clip(user_id, clip_request).await);
     Ok(warp::reply::json(&clip))
@@ -243,6 +272,7 @@ pub async fn run_server() {
                 .and_then(get_stream_hype))
             .or(warp::post()
                 .and(warp::path!("stream" / i64 / "rate"))
+                .and(warp::query())
                 .and(warp::body::json())
                 .and_then(rate_stream))
             .or(warp::put()
@@ -251,13 +281,16 @@ pub async fn run_server() {
                 .and_then(set_custom_title))
             .or(warp::put()
                 .and(warp::path!("user" / String / "progress"))
+                .and(warp::query())
                 .and(warp::body::json())
                 .and_then(set_streams_progress))
             .or(warp::get()
                 .and(warp::path!("user" / String / "progress"))
+                .and(warp::query())
                 .and_then(get_streams_progress))
             .or(warp::get()
                 .and(warp::path!("user" / String / "ratings"))
+                .and(warp::query())
                 .and_then(get_stream_ratings))
             .or(warp::get()
                 .and(warp::path!("parties"))
@@ -272,6 +305,7 @@ pub async fn run_server() {
                 .and_then(get_all_clips))
             .or(warp::post()
                 .and(warp::path!("clips"))
+                .and(warp::query())
                 .and(warp::body::json())
                 .and_then(create_clip))
             .or(warp::get()
