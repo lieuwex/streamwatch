@@ -95,20 +95,19 @@ impl StreamFileName {
         };
 
         let info: serde_yaml::Value = serde_yaml::from_str(&s)?;
-
         let info = info
             .as_mapping()
             .ok_or(anyhow!("parsing error: expected mapping"))?;
 
-        let datapoints = info
-            .get(&"datapoints".into())
-            .ok_or(anyhow!("field not found"))?;
-        let datapoints = serde_yaml::from_value(datapoints.to_owned())?;
+        let datapoints = match info.get(&"datapoints".into()) {
+            Some(value) => serde_yaml::from_value(value.to_owned())?,
+            None => vec![],
+        };
 
-        let jumpcuts = info
-            .get(&"jumpcuts".into())
-            .ok_or(anyhow!("field not found"))?;
-        let jumpcuts = serde_yaml::from_value(jumpcuts.to_owned())?;
+        let jumpcuts = match info.get(&"jumpcuts".into()) {
+            Some(value) => serde_yaml::from_value(value.to_owned())?,
+            None => vec![],
+        };
 
         Ok(Some((datapoints, jumpcuts)))
     }
