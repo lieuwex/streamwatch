@@ -1,7 +1,7 @@
 use crate::job_handler::{Job, SENDER};
 use crate::types::{GameFeature, GameItem, StreamFileName, StreamInfo};
+use crate::{arc_mutex_unwrap, DB, STREAMS_DIR};
 use crate::{create_preview::get_video_duration_in_secs, types::GameInfo};
-use crate::{DB, STREAMS_DIR};
 
 use std::collections::HashMap;
 use std::ops::DerefMut;
@@ -191,10 +191,7 @@ async fn handle_new_stream(
         });
     db.replace_games(tx.clone(), stream_id, games).await?;
 
-    match Arc::try_unwrap(tx) {
-        Ok(mutex) => mutex.into_inner().commit().await?,
-        Err(arc) => bail!("arc is owned more than once: {}", Arc::strong_count(&arc)),
-    }
+    arc_mutex_unwrap!(tx)?.commit().await?;
 
     sender.send(Job::Thumbnails {
         stream_id,

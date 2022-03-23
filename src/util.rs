@@ -1,5 +1,3 @@
-
-
 use warp::reject::Reject;
 
 #[macro_export]
@@ -77,6 +75,19 @@ macro_rules! check {
                 eprintln!("returning error from web request handler: {:?}", e);
                 return Err(warp::reject::custom(AnyhowError(e)));
             }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! arc_mutex_unwrap {
+    ($arc:expr) => {
+        match Arc::try_unwrap($arc) {
+            Ok(mutex) => Ok(mutex.into_inner()),
+            Err(arc) => Err(anyhow::anyhow!(
+                "arc is owned more than once: {}",
+                Arc::strong_count(&arc)
+            )),
         }
     };
 }
