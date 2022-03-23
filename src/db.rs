@@ -5,16 +5,19 @@ use crate::types::{
 };
 
 use std::collections::HashMap;
+use std::ops::DerefMut;
+use std::sync::Arc;
 use std::time::Instant;
 
 use sqlx::sqlite::{SqlitePool, SqliteRow};
-use sqlx::Row;
+use sqlx::{Row, Transaction};
 
 use anyhow::Result;
 
 use chrono::{DateTime, Utc};
 
 use futures::TryStreamExt;
+use tokio::sync::Mutex;
 
 pub struct Database {
     pub pool: sqlx::SqlitePool,
@@ -183,19 +186,23 @@ impl Database {
             .await?;
         Ok(res)
     }
-    pub async fn insert_possible_game(
+    pub async fn insert_possible_game<'c, E>(
         &self,
+        executor: E,
         name: String,
         twitch_name: Option<String>,
         platform: Option<String>,
-    ) -> Result<GameInfo> {
+    ) -> Result<GameInfo>
+    where
+        E: sqlx::Executor<'c, Database = sqlx::sqlite::Sqlite>,
+    {
         let res = sqlx::query!(
             "INSERT INTO GAMES(name, platform, twitch_name) VALUES(?1, ?2, ?3)",
             name,
             platform,
             twitch_name
         )
-        .execute(&self.pool)
+        .execute(executor)
         .await?;
         Ok(GameInfo {
             name,
@@ -205,14 +212,17 @@ impl Database {
         })
     }
 
-    pub async fn replace_games<I>(&self, stream_id: i64, items: I) -> Result<()>
+    pub async fn replace_games<'c, I>(
+        &self,
+        tx: Arc<Mutex<Transaction<'c, sqlx::Sqlite>>>,
+        stream_id: i64,
+        items: I,
+    ) -> Result<()>
     where
         I: IntoIterator<Item = GameItem>,
     {
-        let mut tx = self.pool.begin().await?;
-
         sqlx::query!("DELETE FROM game_features WHERE stream_id = ?1", stream_id)
-            .execute(&mut tx)
+            .execute(tx.lock().await.deref_mut())
             .await?;
 
         for item in items {
@@ -222,11 +232,10 @@ impl Database {
                 item.id,
                 item.start_time
             )
-            .execute(&mut tx)
+            .execute(tx.lock().await.deref_mut())
             .await?;
         }
 
-        tx.commit().await?;
         Ok(())
     }
 

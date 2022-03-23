@@ -8,6 +8,9 @@ use crate::{check, DB, STREAMS_DIR};
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::str::FromStr;
+use std::sync::Arc;
+
+use tokio::sync::Mutex;
 
 use warp::http::StatusCode;
 use warp::{Filter, Reply};
@@ -48,7 +51,8 @@ async fn replace_games(
     items: Vec<GameItem>,
 ) -> Result<warp::reply::Response, warp::Rejection> {
     let db = DB.get().unwrap();
-    check!(db.replace_games(stream_id, items).await);
+    let tx = Arc::new(Mutex::new(db.pool.begin().await.unwrap()));
+    check!(db.replace_games(tx, stream_id, items).await);
 
     Ok(warp::reply().into_response())
 }
@@ -176,13 +180,21 @@ async fn add_possible_game(
 ) -> Result<warp::reply::Json, warp::Rejection> {
     let db = DB.get().unwrap();
 
-    let name = check!(info.get("name").ok_or_else(|| anyhow!("name required")));
-    let twitch_name = info.get("twitchName");
-    let platform = info.get("platform");
-    let game_info = check!(
-        db.insert_possible_game(name.to_owned(), twitch_name.cloned(), platform.cloned())
+    let game_info = {
+        let name = check!(info.get("name").ok_or_else(|| anyhow!("name required")));
+        let twitch_name = info.get("twitchName");
+        let platform = info.get("platform");
+
+        check!(
+            db.insert_possible_game(
+                &db.pool,
+                name.to_owned(),
+                twitch_name.cloned(),
+                platform.cloned()
+            )
             .await
-    );
+        )
+    };
 
     Ok(warp::reply::json(&game_info))
 }

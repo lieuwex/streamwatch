@@ -4,10 +4,12 @@ use crate::{create_preview::get_video_duration_in_secs, types::GameInfo};
 use crate::{DB, STREAMS_DIR};
 
 use std::collections::HashMap;
+use std::ops::DerefMut;
 use std::path::Path;
+use std::sync::Arc;
 
-use anyhow::Result;
 use tokio::fs::{read_dir, remove_dir_all, remove_file};
+use tokio::sync::Mutex;
 use tokio_stream::wrappers::ReadDirStream;
 
 use futures::stream::iter;
@@ -19,7 +21,7 @@ use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, TimeZone};
 
 use regex::Regex;
 
-use anyhow::bail;
+use anyhow::{bail, Result};
 
 macro_rules! log_err {
     ($item:expr) => {
@@ -97,6 +99,8 @@ async fn handle_new_stream(
         .await?
         .unwrap_or((vec![], vec![]));
 
+    let tx = Arc::new(Mutex::new(db.pool.begin().await?));
+
     let stream_id: i64 = {
         let duration = f64::from(duration);
         let has_chat = file_name.has_chat().await?;
@@ -115,7 +119,7 @@ async fn handle_new_stream(
             datapoints_json,
             jumpcuts_json,
         )
-        .execute(&db.pool)
+        .execute(tx.lock().await.deref_mut())
         .await?
         .last_insert_rowid()
     };
@@ -123,6 +127,7 @@ async fn handle_new_stream(
     struct FoldState<'a> {
         games: Vec<GameFeature>,
         possible_games: &'a mut Vec<GameInfo>,
+        tx: Arc<Mutex<sqlx::Transaction<'a, sqlx::Sqlite>>>,
     }
 
     let games = iter(datapoints)
@@ -131,6 +136,7 @@ async fn handle_new_stream(
             FoldState {
                 games: vec![],
                 possible_games,
+                tx: tx.clone(),
             },
             |mut state: FoldState<'_>, datapoint| async move {
                 let last_item_same_game = state
@@ -154,6 +160,7 @@ async fn handle_new_stream(
                     None => {
                         let game = db
                             .insert_possible_game(
+                                state.tx.clone().lock_owned().await.deref_mut(),
                                 datapoint.game.clone(),
                                 Some(datapoint.game),
                                 None,
@@ -179,7 +186,12 @@ async fn handle_new_stream(
             id: g.info.id,
             start_time: g.start_time,
         });
-    db.replace_games(stream_id, games).await?;
+    db.replace_games(tx.clone(), stream_id, games).await?;
+
+    match Arc::try_unwrap(tx) {
+        Ok(mutex) => mutex.into_inner().commit().await?,
+        Err(arc) => bail!("arc is owned more than once: {}", Arc::strong_count(&arc)),
+    }
 
     sender.send(Job::Thumbnails {
         stream_id,
