@@ -17,7 +17,7 @@ use futures::StreamExt;
 
 use once_cell::sync::Lazy;
 
-use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, TimeZone};
+use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, TimeZone, Utc};
 
 use regex::Regex;
 
@@ -109,8 +109,10 @@ async fn handle_new_stream(
         let datapoints_json = serde_json::to_string(&datapoints)?;
         let jumpcuts_json = serde_json::to_string(&jumpcuts)?;
 
+        let inserted_at = Utc::now().timestamp();
+
         sqlx::query!(
-            "INSERT INTO streams(filename, filesize, ts, duration, preview_count, thumbnail_count, has_chat, datapoints_json, jumpcuts_json) values(?1, ?2, ?3, ?4, 0, 0, ?5, ?6, ?7)",
+            "INSERT INTO streams(filename, filesize, ts, duration, preview_count, thumbnail_count, has_chat, datapoints_json, jumpcuts_json, inserted_at) values(?1, ?2, ?3, ?4, 0, 0, ?5, ?6, ?7, ?8)",
             file_name,
             file_size,
             timestamp,
@@ -118,6 +120,7 @@ async fn handle_new_stream(
             has_chat,
             datapoints_json,
             jumpcuts_json,
+            inserted_at,
         )
         .execute(tx.lock().await.deref_mut())
         .await?
