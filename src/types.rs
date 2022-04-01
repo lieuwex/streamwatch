@@ -139,6 +139,7 @@ pub struct StreamInfo {
     pub file_name: StreamFileName,
     pub file_size: u64,
     pub timestamp: i64,
+    pub inserted_at: Option<i64>,
     pub duration: f64,
     pub has_preview: bool,
     pub thumbnail_count: usize,
@@ -166,6 +167,9 @@ impl StreamInfo {
 
     pub fn datetime(&self) -> DateTime<Utc> {
         Utc.timestamp(self.timestamp, 0)
+    }
+    pub fn insertion_datetime(&self) -> Option<DateTime<Utc>> {
+        self.inserted_at.map(|ts| Utc.timestamp(ts, 0))
     }
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]

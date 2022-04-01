@@ -44,6 +44,7 @@ impl Database {
                     x as u64
                 },
                 timestamp: row.get("ts"),
+                inserted_at: row.get("inserted_at"),
                 duration: {
                     let x: f32 = row.get("duration");
                     f64::from(x)
@@ -95,6 +96,7 @@ impl Database {
             filename,
             filesize,
             ts,
+            inserted_at,
             duration,
             preview_count,
             thumbnail_count,
@@ -129,6 +131,7 @@ impl Database {
             filename,
             filesize,
             ts,
+            inserted_at,
             duration,
             preview_count,
             thumbnail_count,
