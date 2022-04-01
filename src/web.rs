@@ -3,7 +3,7 @@ use crate::scan::scan_streams;
 use crate::types::{ConversionProgress, CreateClipRequest, GameItem, StreamJson};
 use crate::util::AnyhowError;
 use crate::watchparty::{get_watch_parties, watch_party_ws};
-use crate::{check, DB, STREAMS_DIR};
+use crate::{arc_mutex_unwrap, check, DB, STREAMS_DIR};
 
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -51,8 +51,10 @@ async fn replace_games(
     items: Vec<GameItem>,
 ) -> Result<warp::reply::Response, warp::Rejection> {
     let db = DB.get().unwrap();
+
     let tx = Arc::new(Mutex::new(db.pool.begin().await.unwrap()));
-    check!(db.replace_games(tx, stream_id, items).await);
+    check!(db.replace_games(tx.clone(), stream_id, items).await);
+    check!(arc_mutex_unwrap!(tx)).commit().await.unwrap();
 
     Ok(warp::reply().into_response())
 }
