@@ -1,16 +1,18 @@
+use crate::STREAMS_DIR;
+
 use tokio::process::Command;
 
 use itertools::Itertools;
 
 use anyhow::Result;
 
-use crate::types::StreamInfo;
+use streamwatch_shared::types::StreamInfo;
 
 async fn _get_volume_points(stream: StreamInfo) -> Result<Vec<(f32, f32)>> {
     let mut cmd = {
         let mut cmd = Command::new("nice");
         cmd.args(&["-n10", "ffmpeg", "-i"]);
-        cmd.arg(stream.file_name.stream_path());
+        cmd.arg(stream.file_name.stream_path(STREAMS_DIR));
         cmd.args(&[
             "-vn",
             "-af",

@@ -1,3 +1,5 @@
+use streamwatch_shared::functions::get_video_duration_in_secs;
+
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -7,26 +9,6 @@ use tokio::process::Command;
 use anyhow::Result;
 
 const SECTION_DURATION_SECS: i32 = 1;
-
-pub async fn get_video_duration_in_secs(path: &Path) -> Result<f32> {
-    let output = Command::new("ffprobe")
-        .args(&[
-            "-v",
-            "error",
-            "-select_streams",
-            "v:0",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "csv=p=0",
-        ])
-        .arg(path.as_os_str())
-        .output()
-        .await?;
-
-    let s = String::from_utf8(output.stdout)?;
-    Ok(s.trim().parse::<f32>()?)
-}
 
 fn get_sections(duration: f32) -> Vec<(i32, i32)> {
     let count = std::cmp::max((duration / 900.0) as usize, 1);

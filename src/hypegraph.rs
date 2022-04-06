@@ -14,7 +14,8 @@ use serde::Serialize;
 use regex::Regex;
 
 use crate::chat::FileReader;
-use crate::types::StreamInfo;
+
+use streamwatch_shared::types::StreamInfo;
 
 pub async fn get_volume_points(stream: StreamInfo) -> Result<Vec<(f32, f32)>> {
     let mut cmd = {

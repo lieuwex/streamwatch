@@ -1,5 +1,8 @@
+use crate::STREAMS_DIR;
+
 use super::types::Item;
-use crate::types::StreamInfo;
+
+use streamwatch_shared::types::StreamInfo;
 
 use chrono::{DateTime, Utc};
 
@@ -23,7 +26,7 @@ pub struct FileReader {
 
 impl FileReader {
     async fn create_lines(stream: &StreamInfo) -> Result<LinesReader, Error> {
-        let f = File::open(stream.file_name.chat_file_path()).await?;
+        let f = File::open(stream.file_name.chat_file_path(STREAMS_DIR)).await?;
         let reader = BufReader::new(ZstdDecoder::new(BufReader::new(f)));
         Ok(reader.lines())
     }

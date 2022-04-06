@@ -1488,10 +1488,25 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "sqlx",
+ "streamwatch-shared",
  "tokio",
  "tokio-stream",
  "uuid",
  "warp",
+]
+
+[[package]]
+name = "streamwatch-shared"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "futures",
+ "once_cell",
+ "regex",
+ "serde",
+ "serde_yaml",
+ "tokio",
 ]
 
 [[package]]

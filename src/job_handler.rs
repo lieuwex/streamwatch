@@ -5,8 +5,9 @@ use std::time::Instant;
 use crate::chatspeed::get_chatspeed_points;
 use crate::create_preview::{create_preview, create_thumbnails, get_sections_from_file};
 use crate::loudness::get_loudness_points;
-use crate::types::{StreamInfo, StreamJson};
 use crate::{okky, DB};
+
+use streamwatch_shared::types::{StreamInfo, StreamJson};
 
 use tokio::sync::{self, mpsc};
 

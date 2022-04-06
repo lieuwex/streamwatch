@@ -10,7 +10,6 @@ mod job_handler;
 mod loudness;
 mod migrations;
 mod scan;
-mod types;
 mod util;
 mod volume;
 mod watchparty;

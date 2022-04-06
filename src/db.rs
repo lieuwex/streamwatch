@@ -1,5 +1,6 @@
 use crate::loudness::LoudnessDatapoint;
-use crate::types::{
+
+use streamwatch_shared::types::{
     Clip, ConversionProgress, CreateClipRequest, DbMessage, GameInfo, GameItem, HypeDatapoint,
     PersonInfo, StreamInfo, StreamJson, StreamProgress,
 };

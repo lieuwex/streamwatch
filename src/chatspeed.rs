@@ -3,7 +3,9 @@ use chrono::Duration;
 use itertools::Itertools;
 use std::collections::HashMap;
 
-use crate::{chat::FileReader, types::StreamInfo};
+use crate::chat::FileReader;
+
+use streamwatch_shared::types::StreamInfo;
 
 pub async fn get_chatspeed_points(stream: StreamInfo) -> Result<Vec<(usize, usize)>> {
     if !stream.has_chat || vec![614].contains(&stream.id) {

@@ -1,8 +1,6 @@
-use crate::{DB};
+use crate::{DB, STREAMS_DIR};
 
 use anyhow::Result;
-
-
 
 async fn get_version() -> Result<i64> {
     let db = DB.get().unwrap();
@@ -28,7 +26,12 @@ async fn three() -> Result<()> {
 
     let streams = db.get_streams().await?;
     for stream in streams {
-        let (datapoints, jumpcuts) = match stream.info.file_name.get_extra_info_from_file().await? {
+        let (datapoints, jumpcuts) = match stream
+            .info
+            .file_name
+            .get_extra_info_from_file(STREAMS_DIR)
+            .await?
+        {
             None => continue,
             Some((datapoints, jumpcuts)) => (datapoints, jumpcuts),
         };
@@ -84,7 +87,7 @@ async fn four() -> Result<()> {
     {
         let mut tx = db.pool.begin().await?;
         for stream in streams {
-            let has_chat = stream.info.file_name.has_chat().await?;
+            let has_chat = stream.info.file_name.has_chat(STREAMS_DIR).await?;
 
             sqlx::query("UPDATE streams SET has_chat = ? WHERE id = ?")
                 .bind(has_chat)

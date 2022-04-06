@@ -1,5 +1,3 @@
-use super::STREAMS_DIR;
-
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
@@ -55,18 +53,18 @@ impl StreamFileName {
         &self.0
     }
 
-    pub fn stream_path(&self) -> PathBuf {
-        Path::new(STREAMS_DIR).join(&self.0)
+    pub fn stream_path(&self, streams_dir: &str) -> PathBuf {
+        Path::new(streams_dir).join(&self.0)
     }
 
-    pub fn chat_file_path(&self) -> PathBuf {
-        let mut res = Path::new(STREAMS_DIR).join(&self.0);
+    pub fn chat_file_path(&self, streams_dir: &str) -> PathBuf {
+        let mut res = Path::new(streams_dir).join(&self.0);
         res.set_extension("txt.zst");
         res
     }
 
-    pub async fn has_chat(&self) -> Result<bool> {
-        let res = metadata(self.chat_file_path())
+    pub async fn has_chat(&self, streams_dir: &str) -> Result<bool> {
+        let res = metadata(self.chat_file_path(streams_dir))
             .await
             .map(|_| true)
             .or_else(|error| {
@@ -79,16 +77,17 @@ impl StreamFileName {
         Ok(res)
     }
 
-    fn extra_info_file_path(&self) -> PathBuf {
-        let mut res = Path::new(STREAMS_DIR).join(&self.0);
+    fn extra_info_file_path(&self, streams_dir: &str) -> PathBuf {
+        let mut res = Path::new(streams_dir).join(&self.0);
         res.set_extension("yaml");
         res
     }
 
     pub async fn get_extra_info_from_file(
         &self,
+        streams_dir: &str,
     ) -> Result<Option<(Vec<StreamDatapoint>, Vec<StreamJumpcut>)>> {
-        let s = match read_to_string(self.extra_info_file_path()).await {
+        let s = match read_to_string(self.extra_info_file_path(streams_dir)).await {
             Ok(s) => s,
             Err(e) if e.kind() == ErrorKind::NotFound => return Ok(None),
             Err(e) => return Err(anyhow::Error::from(e)),

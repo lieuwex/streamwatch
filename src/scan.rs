@@ -1,7 +1,8 @@
 use crate::job_handler::{Job, SENDER};
-use crate::types::{GameFeature, GameItem, StreamFileName, StreamInfo};
 use crate::{arc_mutex_unwrap, DB, STREAMS_DIR};
-use crate::{create_preview::get_video_duration_in_secs, types::GameInfo};
+
+use streamwatch_shared::functions::{get_video_duration_in_secs, parse_filename};
+use streamwatch_shared::types::{GameFeature, GameInfo, GameItem, StreamFileName, StreamInfo};
 
 use std::collections::HashMap;
 use std::ops::DerefMut;
@@ -15,11 +16,7 @@ use tokio_stream::wrappers::ReadDirStream;
 use futures::stream::iter;
 use futures::StreamExt;
 
-use once_cell::sync::Lazy;
-
-use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, TimeZone, Utc};
-
-use regex::Regex;
+use chrono::Utc;
 
 use anyhow::{bail, Result};
 
@@ -47,27 +44,6 @@ pub async fn remove_thumbnails_and_preview(stream_id: i64) -> Result<()> {
     Ok(())
 }
 
-fn parse_filename(path: &Path) -> Option<DateTime<Local>> {
-    static FILE_STEM_REGEX_DATETIME: Lazy<Regex> =
-        Lazy::new(|| Regex::new(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}").unwrap());
-    static FILE_STEM_REGEX_DATE: Lazy<Regex> =
-        Lazy::new(|| Regex::new(r"^\d{4}-\d{2}-\d{2}").unwrap());
-
-    let stem = path.file_stem().unwrap().to_str().unwrap();
-
-    let naive_datetime = FILE_STEM_REGEX_DATETIME
-        .find(stem)
-        .and_then(|m| NaiveDateTime::parse_from_str(m.as_str(), "%Y-%m-%d %H:%M:%S").ok())
-        .or_else(|| {
-            FILE_STEM_REGEX_DATE
-                .find(stem)
-                .and_then(|m| NaiveDate::parse_from_str(m.as_str(), "%Y-%m-%d").ok())
-                .map(|d| d.and_hms(0, 0, 0))
-        })?;
-
-    Some(Local.from_local_datetime(&naive_datetime).unwrap())
-}
-
 async fn handle_new_stream(
     path: &Path,
     file_name: String,
@@ -80,7 +56,7 @@ async fn handle_new_stream(
     let file_name = StreamFileName::from(file_name);
 
     let timestamp = match parse_filename(path) {
-        Some(date) => date.timestamp(),
+        Some((date, _)) => date.timestamp(),
         None => {
             eprintln!("error parsing timestamp for {:?}", path);
             0
@@ -95,7 +71,7 @@ async fn handle_new_stream(
     };
 
     let (datapoints, jumpcuts) = file_name
-        .get_extra_info_from_file()
+        .get_extra_info_from_file(STREAMS_DIR)
         .await?
         .unwrap_or((vec![], vec![]));
 
@@ -103,7 +79,7 @@ async fn handle_new_stream(
 
     let stream_id: i64 = {
         let duration = f64::from(duration);
-        let has_chat = file_name.has_chat().await?;
+        let has_chat = file_name.has_chat(STREAMS_DIR).await?;
         let file_name = file_name.as_str();
 
         let datapoints_json = serde_json::to_string(&datapoints)?;
@@ -212,7 +188,7 @@ async fn handle_modified_stream(path: &Path, file_name: String, file_size: i64) 
     let sender = SENDER.get().unwrap();
 
     let timestamp = match parse_filename(path) {
-        Some(date) => date.timestamp(),
+        Some((date, _)) => date.timestamp(),
         None => {
             eprintln!("error parsing timestamp for {:?}", path);
             0

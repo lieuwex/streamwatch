@@ -1,3 +1,5 @@
+use crate::STREAMS_DIR;
+
 use std::{collections::HashMap, iter::Sum, panic};
 
 use tokio::process::Command;
@@ -8,7 +10,7 @@ use anyhow::Result;
 
 use regex::Regex;
 
-use crate::types::{StreamFileName, StreamInfo};
+use streamwatch_shared::types::{StreamFileName, StreamInfo};
 
 struct LoudnessInformation {
     pub momentary: f32,
@@ -56,7 +58,7 @@ async fn _get_loudness_points(
         cmd.args(&["-n10", "ffmpeg"]);
         cmd.args(&["-hide_banner", "-nostats"]);
         cmd.arg("-i");
-        cmd.arg(stream_filename.stream_path());
+        cmd.arg(stream_filename.stream_path(STREAMS_DIR));
         cmd.args(&["-vn", "-filter_complex", "ebur128", "-f", "null", "-"]);
         cmd
     };

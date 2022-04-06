@@ -4,7 +4,7 @@ use super::types::Item;
 use crate::{
     check,
     util::{merge, AnyhowError},
-    DB,
+    DB, STREAMS_DIR,
 };
 
 use std::collections::hash_map::{Entry, HashMap};
@@ -102,7 +102,7 @@ pub async fn handle_chat_request(
                     Some(s) => s,
                 };
 
-                let file_reader = if check!(stream.info.file_name.has_chat().await) {
+                let file_reader = if check!(stream.info.file_name.has_chat(STREAMS_DIR).await) {
                     Some(check!(FileReader::new(stream.info).await))
                 } else {
                     None

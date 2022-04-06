@@ -11,6 +11,8 @@ lto = true
 debug = true
 
 [dependencies]
+streamwatch-shared = { path = "./streamwatch-shared" }
+
 regex = "1"
 
 futures = "0.3"

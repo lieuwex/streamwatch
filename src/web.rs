@@ -1,9 +1,10 @@
 use crate::chat::handle_chat_request;
 use crate::scan::scan_streams;
-use crate::types::{ConversionProgress, CreateClipRequest, GameItem, StreamJson};
 use crate::util::AnyhowError;
 use crate::watchparty::{get_watch_parties, watch_party_ws};
 use crate::{arc_mutex_unwrap, check, DB, STREAMS_DIR};
+
+use streamwatch_shared::types::{ConversionProgress, CreateClipRequest, GameItem, StreamJson};
 
 use std::collections::HashMap;
 use std::net::IpAddr;
