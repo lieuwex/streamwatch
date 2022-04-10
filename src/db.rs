@@ -273,12 +273,12 @@ impl Database {
         Ok(())
     }
 
-    pub async fn get_userid_by_username(&self, username: &str) -> Option<i64> {
-        sqlx::query!("SELECT id FROM users where username = ?1", username)
+    pub async fn get_userid_by_username(&self, username: &str) -> Result<Option<i64>> {
+        let res = sqlx::query!("SELECT id FROM users where username = ?1", username)
             .map(|row| row.id)
-            .fetch_one(&self.pool)
-            .await
-            .ok()
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(res)
     }
 
     pub async fn check_password(&self, user_id: i64, password: &str) -> Result<bool> {

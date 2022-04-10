@@ -82,7 +82,7 @@ async fn get_stream_ratings(
 ) -> Result<warp::reply::Response, warp::Rejection> {
     let db = DB.get().unwrap();
 
-    let user_id = match db.get_userid_by_username(&username).await {
+    let user_id = match check!(db.get_userid_by_username(&username).await) {
         None => return Ok(reply_status!(StatusCode::UNAUTHORIZED)),
         Some(id) => id,
     };
@@ -111,7 +111,7 @@ async fn rate_stream(
 
     let db = DB.get().unwrap();
 
-    let user_id = match db.get_userid_by_username(&username).await {
+    let user_id = match check!(db.get_userid_by_username(&username).await) {
         None => return Ok(reply_status!(StatusCode::UNAUTHORIZED)),
         Some(id) => id,
     };
@@ -139,7 +139,7 @@ async fn get_streams_progress(
 ) -> Result<warp::reply::Response, warp::Rejection> {
     let db = DB.get().unwrap();
 
-    let user_id = match db.get_userid_by_username(&username).await {
+    let user_id = match check!(db.get_userid_by_username(&username).await) {
         None => return Ok(reply_status!(StatusCode::UNAUTHORIZED)),
         Some(id) => id,
     };
@@ -158,7 +158,7 @@ async fn set_streams_progress(
 ) -> Result<warp::reply::Response, warp::Rejection> {
     let db = DB.get().unwrap();
 
-    let user_id = match db.get_userid_by_username(&username).await {
+    let user_id = match check!(db.get_userid_by_username(&username).await) {
         None => return Ok(reply_status!(StatusCode::UNAUTHORIZED)),
         Some(id) => id,
     };
@@ -233,10 +233,10 @@ async fn create_clip(
     let db = DB.get().unwrap();
 
     let n: Option<String> = None; // HACK
-    let user_id = match db
-        .get_userid_by_username(&clip_request.author_username)
-        .await
-    {
+    let user_id = match check!(
+        db.get_userid_by_username(&clip_request.author_username)
+            .await
+    ) {
         None => return Ok(warp::reply::json(&n)),
         Some(id) => id,
     };
