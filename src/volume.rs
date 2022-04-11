@@ -9,7 +9,7 @@ use anyhow::Result;
 
 use streamwatch_shared::types::StreamInfo;
 
-async fn _get_volume_points(stream: StreamInfo) -> Result<Vec<(f32, f32)>> {
+async fn _get_volume_points(stream: &StreamInfo) -> Result<Vec<(f32, f32)>> {
     let mut cmd = {
         let mut cmd = Command::new("nice");
         cmd.args(&["-n10", "ffmpeg", "-i"]);
@@ -52,7 +52,7 @@ async fn _get_volume_points(stream: StreamInfo) -> Result<Vec<(f32, f32)>> {
     Ok(res)
 }
 
-pub async fn get_volume_points(stream: StreamInfo) -> Result<Vec<(DateTime<Utc>, f32)>> {
+pub async fn get_volume_points(stream: &StreamInfo) -> Result<Vec<(DateTime<Utc>, f32)>> {
     let res = _get_volume_points(stream)
         .await?
         .into_iter()
