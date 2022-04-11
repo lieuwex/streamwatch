@@ -148,7 +148,7 @@ pub struct StreamInfo {
     pub has_preview: bool,
     pub thumbnail_count: usize,
     pub has_chat: bool,
-    pub hype_average: Option<f32>,
+    pub hype_average: Option<f64>,
 }
 
 impl StreamInfo {
@@ -225,17 +225,17 @@ pub struct ConversionProgress {
     pub ts: DateTime<Utc>,
     pub datapoint_title: Option<String>,
     pub games: Option<String>,
-    pub progress: f32,
-    pub eta: Option<f32>,
+    pub progress: f64,
+    pub eta: Option<f64>,
 }
 
 #[derive(Clone, Debug, Serialize)]
 pub struct HypeDatapoint {
     #[serde(with = "ts_seconds")]
     pub ts: DateTime<Utc>,
-    pub loudness: Option<f32>,
+    pub loudness: Option<f64>,
     pub chat_hype: Option<i32>,
-    pub hype: f32,
+    pub hype: f64,
 }
 
 #[derive(Clone, Debug, Deserialize)]

@@ -49,10 +49,7 @@ impl Database {
                     let inserted_at: Option<i64> = row.get("inserted_at");
                     inserted_at.map(|x| Utc.timestamp(x, 0))
                 },
-                duration: {
-                    let x: f32 = row.get("duration");
-                    f64::from(x)
-                },
+                duration: row.get("duration"),
                 has_preview: {
                     let x: i64 = row.get("preview_count");
                     x > 0
@@ -179,8 +176,8 @@ impl Database {
                 ts: Utc.timestamp(row.ts, 0),
                 datapoint_title: row.datapoint_title,
                 games: row.games,
-                progress: row.progress,
-                eta: row.eta,
+                progress: f64::from(row.progress), // HACK: should be f64 directly
+                eta: row.eta.map(|x| f64::from(x)), // HACK: should be f64 directly
             })
             .fetch_all(&self.pool)
             .await?;
@@ -301,22 +298,21 @@ impl Database {
     }
 
     pub async fn get_streams_progress(&self, user_id: i64) -> Result<HashMap<i64, StreamProgress>> {
-        let res: sqlx::Result<HashMap<i64, StreamProgress>> = sqlx::query!(
-            "SELECT stream_id,time,real_time FROM stream_progress WHERE user_id = ?1",
-            user_id
-        )
-        .map(|row| {
-            (
-                row.stream_id,
-                StreamProgress {
-                    time: f64::from(row.time),
-                    real_time: Utc.timestamp(row.real_time, 0),
-                },
-            )
-        })
-        .fetch(&self.pool)
-        .try_collect()
-        .await;
+        let res: sqlx::Result<HashMap<i64, StreamProgress>> =
+            sqlx::query("SELECT stream_id,time,real_time FROM stream_progress WHERE user_id = ?1")
+                .bind(user_id)
+                .map(|row| {
+                    (
+                        row.get("stream_id"),
+                        StreamProgress {
+                            time: row.get("time"),
+                            real_time: Utc.timestamp(row.get("real_time"), 0),
+                        },
+                    )
+                })
+                .fetch(&self.pool)
+                .try_collect()
+                .await;
         Ok(res?)
     }
 
@@ -497,13 +493,13 @@ impl Database {
             loudness: row.get("loudness"),
             chat_hype: row.get("messages"),
             hype: {
-                let loudness: Option<f32> = row.get("loudness");
+                let loudness: Option<f64> = row.get("loudness");
                 let messages: Option<i32> = row.get("messages");
 
                 loudness
                     .map(|m| 1.0 / 8.0 * (1.0 + (5.0 * (m + 75.0 / 2.0) / 80.0).tanh()))
                     .unwrap_or(0.0)
-                    + messages.map(|m| (m as f32) / 5.0).unwrap_or(0.0)
+                    + messages.map(|m| (m as f64) / 5.0).unwrap_or(0.0)
             },
         })
         .fetch_all(&self.pool)
@@ -515,7 +511,7 @@ impl Database {
     pub async fn set_stream_decibels(
         &self,
         stream_id: i64,
-        datapoints: Vec<(i64, f32)>,
+        datapoints: Vec<(i64, f64)>,
     ) -> Result<()> {
         let mut tx = self.pool.begin().await?;
 
