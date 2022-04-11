@@ -15,7 +15,7 @@ use sqlx::{Row, Transaction};
 
 use anyhow::Result;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 
 use futures::TryStreamExt;
 use tokio::sync::Mutex;
@@ -44,8 +44,11 @@ impl Database {
                     let x: i64 = row.get("filesize");
                     x as u64
                 },
-                timestamp: row.get("ts"),
-                inserted_at: row.get("inserted_at"),
+                timestamp: Utc.timestamp(row.get("ts"), 0),
+                inserted_at: {
+                    let inserted_at: Option<i64> = row.get("inserted_at");
+                    inserted_at.map(|x| Utc.timestamp(x, 0))
+                },
                 duration: {
                     let x: f32 = row.get("duration");
                     f64::from(x)
@@ -169,12 +172,18 @@ impl Database {
     }
 
     pub async fn get_processing_streams(&self) -> Result<Vec<ConversionProgress>> {
-        let items = sqlx::query_as!(
-            ConversionProgress,
-            "SELECT * FROM stream_conversion_progress"
-        )
-        .fetch_all(&self.pool)
-        .await?;
+        let items = sqlx::query!("SELECT * FROM stream_conversion_progress")
+            .map(|row| ConversionProgress {
+                id: row.id,
+                filename: row.filename,
+                ts: Utc.timestamp(row.ts, 0),
+                datapoint_title: row.datapoint_title,
+                games: row.games,
+                progress: row.progress,
+                eta: row.eta,
+            })
+            .fetch_all(&self.pool)
+            .await?;
         Ok(items)
     }
 
@@ -301,7 +310,7 @@ impl Database {
                 row.stream_id,
                 StreamProgress {
                     time: f64::from(row.time),
-                    real_time: row.real_time,
+                    real_time: Utc.timestamp(row.real_time, 0),
                 },
             )
         })
@@ -394,8 +403,8 @@ impl Database {
                 author_id: row.get("author_id"),
                 author_name: row.get("author_name"),
                 message: row.get("content"),
-                time: row.get("time"),
-                real_time: row.get("real_time"),
+                time: Utc.timestamp(row.get("time"), 0),
+                real_time: Utc.timestamp(row.get("real_time"), 0),
             })
             .fetch_all(&self.pool)
             .await?;
@@ -484,7 +493,7 @@ impl Database {
         )
         .bind(stream_id)
         .map(|row| HypeDatapoint {
-            ts: row.get("ts"),
+            ts: Utc.timestamp(row.get("ts"), 0),
             loudness: row.get("loudness"),
             chat_hype: row.get("messages"),
             hype: {
@@ -547,10 +556,12 @@ impl Database {
         .await?;
 
         for dp in datapoints {
+            let ts = dp.ts.timestamp();
+
             sqlx::query!(
                 "INSERT INTO stream_loudness(stream_id, ts, momentary, short_term, integrated, lra) VALUES(?1, ?2, ?3, ?4, ?5, ?6)",
                 stream_id,
-                dp.ts,
+                ts,
                 dp.momentary,
                 dp.short_term,
                 dp.integrated,
@@ -570,7 +581,7 @@ impl Database {
         datapoints: I,
     ) -> Result<()>
     where
-        I: IntoIterator<Item = (i64, i64)>,
+        I: IntoIterator<Item = (DateTime<Utc>, i64)>,
     {
         let mut tx = self.pool.begin().await?;
 
@@ -582,12 +593,14 @@ impl Database {
         .await?;
 
         for (ts, messages) in datapoints {
+            let ts = ts.timestamp();
+
             sqlx::query!(
-            "INSERT INTO stream_chatspeed_datapoints(stream_id, ts, messages) VALUES(?1, ?2, ?3)",
-            stream_id,
-            ts,
-            messages,
-        )
+                "INSERT INTO stream_chatspeed_datapoints(stream_id, ts, messages) VALUES(?1, ?2, ?3)",
+                stream_id,
+                ts,
+                messages,
+            )
             .execute(&mut tx)
             .await?;
         }

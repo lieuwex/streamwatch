@@ -3,7 +3,10 @@ use std::path::{Path, PathBuf};
 
 use tokio::fs::{metadata, read_to_string};
 
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{
+    serde::{ts_seconds, ts_seconds_option},
+    DateTime, Utc,
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -137,8 +140,10 @@ pub struct StreamInfo {
     pub title_type: String,
     pub file_name: StreamFileName,
     pub file_size: u64,
-    pub timestamp: i64,
-    pub inserted_at: Option<i64>,
+    #[serde(with = "ts_seconds")]
+    pub timestamp: DateTime<Utc>,
+    #[serde(with = "ts_seconds_option")]
+    pub inserted_at: Option<DateTime<Utc>>,
     pub duration: f64,
     pub has_preview: bool,
     pub thumbnail_count: usize,
@@ -163,13 +168,6 @@ impl StreamInfo {
             .map(|i| format!("/thumbnail/{}/{}.webp", self.id, i))
             .collect()
     }
-
-    pub fn datetime(&self) -> DateTime<Utc> {
-        Utc.timestamp(self.timestamp, 0)
-    }
-    pub fn insertion_datetime(&self) -> Option<DateTime<Utc>> {
-        self.inserted_at.map(|ts| Utc.timestamp(ts, 0))
-    }
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StreamDatapoint {
@@ -177,12 +175,14 @@ pub struct StreamDatapoint {
     pub viewcount: i64,
     #[serde(skip_serializing, default)]
     pub game: String, // this field was later removed
-    pub timestamp: i64,
+    #[serde(with = "ts_seconds")]
+    pub timestamp: DateTime<Utc>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StreamJumpcut {
-    pub at: i64,
+    #[serde(with = "ts_seconds")]
+    pub at: DateTime<Utc>,
     pub duration: i64,
 }
 
@@ -201,7 +201,8 @@ pub struct StreamJson {
 #[derive(Clone, Debug, Serialize)]
 pub struct StreamProgress {
     pub time: f64,
-    pub real_time: i64,
+    #[serde(with = "ts_seconds")]
+    pub real_time: DateTime<Utc>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -209,8 +210,10 @@ pub struct DbMessage {
     pub id: i64,
     pub author_id: i64,
     pub message: String,
-    pub time: i64,
-    pub real_time: i64,
+    #[serde(with = "ts_seconds")]
+    pub time: DateTime<Utc>,
+    #[serde(with = "ts_seconds")]
+    pub real_time: DateTime<Utc>,
     pub author_name: String,
 }
 
@@ -218,7 +221,8 @@ pub struct DbMessage {
 pub struct ConversionProgress {
     pub id: i64,
     pub filename: String,
-    pub ts: i64,
+    #[serde(with = "ts_seconds")]
+    pub ts: DateTime<Utc>,
     pub datapoint_title: Option<String>,
     pub games: Option<String>,
     pub progress: f32,
@@ -227,7 +231,8 @@ pub struct ConversionProgress {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct HypeDatapoint {
-    pub ts: i64,
+    #[serde(with = "ts_seconds")]
+    pub ts: DateTime<Utc>,
     pub loudness: Option<f32>,
     pub chat_hype: Option<i32>,
     pub hype: f32,

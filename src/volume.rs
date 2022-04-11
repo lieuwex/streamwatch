@@ -1,5 +1,6 @@
 use crate::STREAMS_DIR;
 
+use chrono::{DateTime, Duration, Utc};
 use tokio::process::Command;
 
 use itertools::Itertools;
@@ -51,16 +52,14 @@ async fn _get_volume_points(stream: StreamInfo) -> Result<Vec<(f32, f32)>> {
     Ok(res)
 }
 
-pub async fn get_volume_points(stream: StreamInfo) -> Result<Vec<(i64, f32)>> {
-    let ts = stream.timestamp;
-
+pub async fn get_volume_points(stream: StreamInfo) -> Result<Vec<(DateTime<Utc>, f32)>> {
     let res = _get_volume_points(stream)
         .await?
         .into_iter()
         .group_by(|(pos, _)| pos.round())
         .into_iter()
         .map(|(pos, xs)| {
-            let pos = pos as i64;
+            let pos = Duration::seconds(pos as i64);
 
             let avg = {
                 let xs: Vec<_> = xs.map(|(_, x)| x).collect();
@@ -69,7 +68,7 @@ pub async fn get_volume_points(stream: StreamInfo) -> Result<Vec<(i64, f32)>> {
                 sum / len
             };
 
-            (ts + pos, avg)
+            (stream.timestamp + pos, avg)
         })
         .collect();
     Ok(res)

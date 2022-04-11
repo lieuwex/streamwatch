@@ -31,7 +31,7 @@ pub async fn get_messages(
                 "message": item.message,
             });
             Item {
-                ts: (item.time * 1000) as usize,
+                ts: item.time,
                 content: to_raw_value(&content).unwrap(),
             }
         })

@@ -2,6 +2,7 @@ use crate::STREAMS_DIR;
 
 use std::{collections::HashMap, iter::Sum, panic};
 
+use chrono::{DateTime, Duration, Utc};
 use tokio::process::Command;
 
 use itertools::Itertools;
@@ -112,7 +113,7 @@ async fn _get_loudness_points(
 }
 
 pub struct LoudnessDatapoint {
-    pub ts: i64,
+    pub ts: DateTime<Utc>,
     pub momentary: f32,
     pub short_term: f32,
     pub integrated: f32,
@@ -127,8 +128,6 @@ pub async fn get_loudness_points(stream: &StreamInfo) -> Result<Vec<LoudnessData
         .group_by(|(pos, _)| pos.round())
         .into_iter()
         .map(|(pos, xs)| {
-            let pos = pos as i64;
-
             let avg = {
                 let xs: Vec<_> = xs.map(|(_, x)| x).collect();
                 let len = xs.len() as f32;
@@ -137,7 +136,7 @@ pub async fn get_loudness_points(stream: &StreamInfo) -> Result<Vec<LoudnessData
             };
 
             LoudnessDatapoint {
-                ts: ts + pos,
+                ts: ts + Duration::seconds(pos as i64),
                 momentary: avg.momentary,
                 short_term: avg.short_term,
                 integrated: avg.integrated,

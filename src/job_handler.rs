@@ -151,7 +151,7 @@ async fn update_chatspeed(stream_id: i64) -> Result<()> {
     let chatspeed = get_chatspeed_points(stream.info)
         .await?
         .into_iter()
-        .map(|(ts, cnt)| (ts as i64, cnt as i64));
+        .map(|(ts, cnt)| (ts, cnt as i64));
     db.set_stream_chatspeed_datapoints(stream_id, chatspeed)
         .await?;
 

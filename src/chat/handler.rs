@@ -10,7 +10,7 @@ use crate::{
 use std::collections::hash_map::{Entry, HashMap};
 use std::sync::Arc;
 
-use chrono::{DateTime, Duration, TimeZone, Utc};
+use chrono::{serde::ts_milliseconds, DateTime, Duration, Utc};
 
 use tokio::sync::Mutex;
 
@@ -23,8 +23,10 @@ use uuid::Uuid;
 #[derive(Clone, Debug, Deserialize)]
 pub struct Request {
     session_token: Option<Uuid>,
-    start: i64, // milliseconds UTC timestamp
-    end: i64,   // milliseconds UTC timestamp
+    #[serde(with = "ts_milliseconds")]
+    start: DateTime<Utc>,
+    #[serde(with = "ts_milliseconds")]
+    end: DateTime<Utc>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -73,8 +75,6 @@ pub async fn handle_chat_request(
     stream_id: i64,
     request: Request,
 ) -> Result<warp::reply::Json, warp::Rejection> {
-    let start = Utc.timestamp_millis(request.start);
-    let end = Utc.timestamp_millis(request.end);
     let session_token = request.session_token.unwrap_or_else(Uuid::new_v4);
 
     // TODO: we're doing some kind of immutable acces here, which means we should be able to
@@ -119,10 +119,10 @@ pub async fn handle_chat_request(
         };
 
         let file_messages = match file_reader {
-            Some(reader) => check!(reader.get_between(start, end).await),
+            Some(reader) => check!(reader.get_between(request.start, request.end).await),
             None => vec![],
         };
-        let db_messages = check!(db::get_messages(stream_id, start, end).await);
+        let db_messages = check!(db::get_messages(stream_id, request.start, request.end).await);
         merge(file_messages, db_messages, |x| x.ts).unwrap()
     };
 

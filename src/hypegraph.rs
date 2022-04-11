@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::io;
 use std::path::Path;
 
-use chrono::Duration;
+use chrono::{DateTime, Duration, Utc};
 use tokio::process::Command;
 
 use itertools::Itertools;
@@ -137,7 +137,7 @@ async fn get_chat_hype(stream: StreamInfo) -> Result<Vec<(i64, f32)>> {
 }
 
 pub struct HypeInfoDatapoint {
-    pub ts: i64,
+    pub ts: DateTime<Utc>,
     pub decibels: Option<f32>,
     pub loudness: Option<f32>,
     pub messages_per_second: Option<f32>,

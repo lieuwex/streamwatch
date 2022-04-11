@@ -43,7 +43,7 @@ async fn three() -> Result<()> {
                 "INSERT INTO stream_datapoints(stream_id, timestamp, title, viewcount) VALUES(?, ?, ?, ?)",
             )
             .bind(stream.info.id)
-            .bind(datapoint.timestamp)
+            .bind(datapoint.timestamp.timestamp())
             .bind(datapoint.title)
             .bind(datapoint.viewcount)
             .execute(&mut tx)
@@ -53,7 +53,7 @@ async fn three() -> Result<()> {
         for jumpcut in jumpcuts {
             sqlx::query("INSERT INTO stream_jumpcuts(stream_id, at, duration) VALUES(?, ?, ?)")
                 .bind(stream.info.id)
-                .bind(jumpcut.at)
+                .bind(jumpcut.at.timestamp())
                 .bind(jumpcut.duration)
                 .execute(&mut tx)
                 .await?;

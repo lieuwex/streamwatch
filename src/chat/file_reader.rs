@@ -44,7 +44,7 @@ impl FileReader {
 
         Ok(Self {
             orphan: None,
-            prev_datetime: stream.datetime(),
+            prev_datetime: stream.timestamp,
             stream,
             lines,
         })
@@ -59,7 +59,7 @@ impl FileReader {
         macro_rules! push {
             ($datetime:expr, $json:expr) => {
                 res.push(Item {
-                    ts: $datetime.timestamp_millis() as usize,
+                    ts: $datetime,
                     content: $json,
                 });
                 self.prev_datetime = $datetime;

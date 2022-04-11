@@ -16,7 +16,7 @@ use tokio_stream::wrappers::ReadDirStream;
 use futures::stream::iter;
 use futures::StreamExt;
 
-use chrono::Utc;
+use chrono::{TimeZone, Utc};
 
 use anyhow::{bail, Result};
 
@@ -56,10 +56,10 @@ async fn handle_new_stream(
     let file_name = StreamFileName::from(file_name);
 
     let timestamp = match parse_filename(path) {
-        Some((date, _)) => date.timestamp(),
+        Some((date, _)) => date.with_timezone(&Utc),
         None => {
             eprintln!("error parsing timestamp for {:?}", path);
-            0
+            Utc.timestamp(0, 0)
         }
     };
 
@@ -81,6 +81,7 @@ async fn handle_new_stream(
         let duration = f64::from(duration);
         let has_chat = file_name.has_chat(STREAMS_DIR).await?;
         let file_name = file_name.as_str();
+        let timestamp = timestamp.timestamp();
 
         let datapoints_json = serde_json::to_string(&datapoints)?;
         let jumpcuts_json = serde_json::to_string(&jumpcuts)?;
@@ -151,7 +152,7 @@ async fn handle_new_stream(
                     }
                 };
 
-                let start_time = (datapoint.timestamp - timestamp).max(0) as f64;
+                let start_time = (datapoint.timestamp - timestamp).num_seconds().max(0) as f64;
                 let game = GameFeature::from_game_info(game, start_time);
                 state.games.push(game);
 
