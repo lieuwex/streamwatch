@@ -1,7 +1,9 @@
 use crate::job_handler::{Job, SENDER};
 use crate::{arc_mutex_unwrap, DB, STREAMS_DIR};
 
-use streamwatch_shared::functions::{get_video_duration_in_secs, parse_filename};
+use streamwatch_shared::functions::{
+    duration_to_seconds_float, get_video_duration, parse_filename,
+};
 use streamwatch_shared::types::{GameFeature, GameInfo, GameItem, StreamFileName, StreamInfo};
 
 use std::collections::HashMap;
@@ -16,7 +18,7 @@ use tokio_stream::wrappers::ReadDirStream;
 use futures::stream::iter;
 use futures::StreamExt;
 
-use chrono::{TimeZone, Utc};
+use chrono::{Duration, TimeZone, Utc};
 
 use anyhow::{bail, Result};
 
@@ -63,7 +65,7 @@ async fn handle_new_stream(
         }
     };
 
-    let duration = match get_video_duration_in_secs(path).await {
+    let duration = match get_video_duration(path).await {
         Ok(d) => d,
         Err(_) => {
             bail!("error getting duration for: {:?}", path);
@@ -78,7 +80,7 @@ async fn handle_new_stream(
     let tx = Arc::new(Mutex::new(db.pool.begin().await?));
 
     let stream_id: i64 = {
-        let duration = f64::from(duration);
+        let duration = duration_to_seconds_float(&duration);
         let has_chat = file_name.has_chat(STREAMS_DIR).await?;
         let file_name = file_name.as_str();
         let timestamp = timestamp.timestamp();
@@ -152,7 +154,7 @@ async fn handle_new_stream(
                     }
                 };
 
-                let start_time = (datapoint.timestamp - timestamp).num_seconds().max(0) as f64;
+                let start_time = (datapoint.timestamp - timestamp).max(Duration::zero());
                 let game = GameFeature::from_game_info(game, start_time);
                 state.games.push(game);
 
@@ -196,7 +198,7 @@ async fn handle_modified_stream(path: &Path, file_name: String, file_size: i64) 
         }
     };
 
-    let duration = match get_video_duration_in_secs(path).await {
+    let duration = match get_video_duration(path).await {
         Ok(d) => d,
         Err(_) => {
             bail!("error getting duration for: {:?}", path);
@@ -205,6 +207,7 @@ async fn handle_modified_stream(path: &Path, file_name: String, file_size: i64) 
 
     let stream_id = {
         let stream_id = db.get_stream_id_by_filename(&file_name).await.unwrap();
+        let duration = duration_to_seconds_float(&duration);
 
         // update filesize
         sqlx::query!(

@@ -1,3 +1,5 @@
+use crate::serde::{duration_seconds, duration_seconds_float};
+
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
@@ -5,7 +7,7 @@ use tokio::fs::{metadata, read_to_string};
 
 use chrono::{
     serde::{ts_seconds, ts_seconds_option},
-    DateTime, Utc,
+    DateTime, Duration, Utc,
 };
 
 use serde::{Deserialize, Serialize};
@@ -35,10 +37,11 @@ impl From<GameFeature> for GameInfo {
 pub struct GameFeature {
     #[serde(flatten)]
     pub info: GameInfo,
-    pub start_time: f64,
+    #[serde(with = "duration_seconds_float")]
+    pub start_time: Duration,
 }
 impl GameFeature {
-    pub const fn from_game_info(info: GameInfo, start_time: f64) -> Self {
+    pub const fn from_game_info(info: GameInfo, start_time: Duration) -> Self {
         Self { info, start_time }
     }
 }
@@ -46,7 +49,8 @@ impl GameFeature {
 #[derive(Deserialize)]
 pub struct GameItem {
     pub id: i64,
-    pub start_time: f64,
+    #[serde(with = "duration_seconds_float")]
+    pub start_time: Duration,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -144,7 +148,8 @@ pub struct StreamInfo {
     pub timestamp: DateTime<Utc>,
     #[serde(with = "ts_seconds_option")]
     pub inserted_at: Option<DateTime<Utc>>,
-    pub duration: f64,
+    #[serde(with = "duration_seconds_float")]
+    pub duration: Duration,
     pub has_preview: bool,
     pub thumbnail_count: usize,
     pub has_chat: bool,
@@ -183,7 +188,8 @@ pub struct StreamDatapoint {
 pub struct StreamJumpcut {
     #[serde(with = "ts_seconds")]
     pub at: DateTime<Utc>,
-    pub duration: i64,
+    #[serde(with = "duration_seconds")]
+    pub duration: Duration,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -200,7 +206,8 @@ pub struct StreamJson {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct StreamProgress {
-    pub time: f64,
+    #[serde(with = "duration_seconds_float")]
+    pub time: Duration,
     #[serde(with = "ts_seconds")]
     pub real_time: DateTime<Utc>,
 }
@@ -225,7 +232,8 @@ pub struct ConversionProgress {
     pub ts: DateTime<Utc>,
     pub datapoint_title: Option<String>,
     pub games: Option<String>,
-    pub progress: f64,
+    #[serde(with = "duration_seconds_float")]
+    pub progress: Duration,
     pub eta: Option<f64>,
 }
 

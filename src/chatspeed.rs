@@ -13,11 +13,8 @@ pub async fn get_chatspeed_points(stream: StreamInfo) -> Result<Vec<(DateTime<Ut
     }
 
     let ts = stream.timestamp;
-    let duration = stream.duration as i64;
-    let (start, end) = (
-        stream.timestamp,
-        stream.timestamp + Duration::seconds(duration),
-    );
+    let duration = stream.duration;
+    let (start, end) = (ts, ts + duration);
 
     let items = FileReader::new(stream)
         .await?
@@ -31,7 +28,7 @@ pub async fn get_chatspeed_points(stream: StreamInfo) -> Result<Vec<(DateTime<Ut
         .map(|(ts, xs)| (ts, xs.count()))
         .collect();
 
-    let res: Vec<(DateTime<Utc>, usize)> = (0..=duration)
+    let res: Vec<(DateTime<Utc>, usize)> = (0..=duration.num_seconds())
         .map(|s| {
             let ts = ts + Duration::seconds(s);
 

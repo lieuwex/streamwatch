@@ -1,4 +1,4 @@
-use streamwatch_shared::functions::get_video_duration_in_secs;
+use streamwatch_shared::functions::{duration_to_seconds_float, get_video_duration};
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -6,15 +6,18 @@ use std::path::{Path, PathBuf};
 use tokio::fs::create_dir_all;
 use tokio::process::Command;
 
+use chrono::Duration;
+
 use anyhow::Result;
 
 const SECTION_DURATION_SECS: i32 = 1;
 
-fn get_sections(duration: f32) -> Vec<(i32, i32)> {
+fn get_sections(duration: &Duration) -> Vec<(i32, i32)> {
+    let duration = duration_to_seconds_float(duration);
     let count = std::cmp::max((duration / 900.0) as usize, 1);
     (1..=count)
         .map(|i| {
-            let frac = (i as f32) / ((count + 1) as f32);
+            let frac = (i as f64) / ((count + 1) as f64);
             let start = (frac * duration) as i32;
             (start, start + SECTION_DURATION_SECS)
         })
@@ -22,8 +25,8 @@ fn get_sections(duration: f32) -> Vec<(i32, i32)> {
 }
 
 pub async fn get_sections_from_file(path: &Path) -> Result<Vec<(i32, i32)>> {
-    let duration = get_video_duration_in_secs(path).await?;
-    Ok(get_sections(duration))
+    let duration = get_video_duration(path).await?;
+    Ok(get_sections(&duration))
 }
 
 /// Creates webp thumbnails

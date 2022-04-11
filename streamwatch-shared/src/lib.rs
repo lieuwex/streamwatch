@@ -1,4 +1,5 @@
 pub mod functions;
+pub mod serde;
 pub mod types;
 
 #[cfg(test)]

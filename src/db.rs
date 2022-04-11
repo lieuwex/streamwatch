@@ -1,5 +1,6 @@
 use crate::loudness::LoudnessDatapoint;
 
+use streamwatch_shared::functions::{duration_to_seconds_float, seconds_float_to_duration};
 use streamwatch_shared::types::{
     Clip, ConversionProgress, CreateClipRequest, DbMessage, GameInfo, GameItem, HypeDatapoint,
     PersonInfo, StreamInfo, StreamJson, StreamProgress,
@@ -49,7 +50,7 @@ impl Database {
                     let inserted_at: Option<i64> = row.get("inserted_at");
                     inserted_at.map(|x| Utc.timestamp(x, 0))
                 },
-                duration: row.get("duration"),
+                duration: seconds_float_to_duration(row.get("duration")),
                 has_preview: {
                     let x: i64 = row.get("preview_count");
                     x > 0
@@ -176,7 +177,7 @@ impl Database {
                 ts: Utc.timestamp(row.ts, 0),
                 datapoint_title: row.datapoint_title,
                 games: row.games,
-                progress: f64::from(row.progress), // HACK: should be f64 directly
+                progress: seconds_float_to_duration(f64::from(row.progress)), // HACK: should be f64 directly
                 eta: row.eta.map(|x| f64::from(x)), // HACK: should be f64 directly
             })
             .fetch_all(&self.pool)
@@ -236,11 +237,13 @@ impl Database {
             .await?;
 
         for item in items {
+            let start_time = duration_to_seconds_float(&item.start_time);
+
             sqlx::query!(
                 "INSERT INTO game_features(stream_id, game_id, start_time) VALUES(?1, ?2, ?3)",
                 stream_id,
                 item.id,
-                item.start_time
+                start_time,
             )
             .execute(tx.lock().await.deref_mut())
             .await?;
@@ -305,7 +308,7 @@ impl Database {
                     (
                         row.get("stream_id"),
                         StreamProgress {
-                            time: row.get("time"),
+                            time: seconds_float_to_duration(row.get("time")),
                             real_time: Utc.timestamp(row.get("real_time"), 0),
                         },
                     )
