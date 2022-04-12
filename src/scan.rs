@@ -4,7 +4,9 @@ use crate::{arc_mutex_unwrap, DB, STREAMS_DIR};
 use streamwatch_shared::functions::{
     duration_to_seconds_float, get_video_duration, parse_filename,
 };
-use streamwatch_shared::types::{GameFeature, GameInfo, GameItem, StreamFileName, StreamInfo};
+use streamwatch_shared::types::{
+    GameFeature, GameInfo, GameItem, StreamDatapoint, StreamFileName, StreamInfo,
+};
 
 use std::collections::HashMap;
 use std::ops::DerefMut;
@@ -85,7 +87,22 @@ async fn handle_new_stream(
         let file_name = file_name.as_str();
         let timestamp = timestamp.timestamp();
 
-        let datapoints_json = serde_json::to_string(&datapoints)?;
+        let datapoints_json = serde_json::to_string(&{
+            // Clone the datapoints vector, but with the game values set to an empty String.
+            // This will make sure that the game values are not serialized, since it is
+            // superfluous in the database (the games are already inserted in the game_features
+            // table).
+            let datapoints: Vec<_> = datapoints
+                .iter()
+                .map(|dp| StreamDatapoint {
+                    title: dp.title.clone(),
+                    viewcount: dp.viewcount,
+                    game: String::new(),
+                    timestamp: dp.timestamp,
+                })
+                .collect();
+            datapoints
+        })?;
         let jumpcuts_json = serde_json::to_string(&jumpcuts)?;
 
         let inserted_at = Utc::now().timestamp();

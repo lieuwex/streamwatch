@@ -178,8 +178,8 @@ impl StreamInfo {
 pub struct StreamDatapoint {
     pub title: String,
     pub viewcount: i64,
-    #[serde(skip_serializing, default)]
-    pub game: String, // this field was later removed
+    #[serde(skip_serializing_if = "String::is_empty", default)]
+    pub game: String,
     #[serde(with = "ts_seconds")]
     pub timestamp: DateTime<Utc>,
 }
