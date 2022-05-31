@@ -250,8 +250,8 @@ pub struct HypeDatapoint {
 pub struct CreateClipRequest {
     pub author_username: String,
     pub stream_id: i64,
-    pub start_time: i64, // in seconds
-    pub duration: i64,   // in seconds
+    pub start_time: f64, // in seconds
+    pub duration: f64,   // in seconds
     pub title: Option<String>,
 }
 #[derive(Clone, Debug, Serialize)]
@@ -260,8 +260,8 @@ pub struct Clip {
     pub author_id: i64,
     pub author_username: String,
     pub stream_id: i64,
-    pub start_time: i64, // in seconds
-    pub duration: i64,   // in seconds
+    pub start_time: f64, // in seconds
+    pub duration: f64,   // in seconds
     pub title: Option<String>,
     pub created_at: i64,
 }
