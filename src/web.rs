@@ -250,7 +250,9 @@ async fn create_clip(
 
 pub async fn run_server() {
     let endpoints = {
-        let cors = warp::cors().allow_any_origin();
+        let cors = warp::cors()
+            .allow_any_origin()
+            .allow_methods(vec!["GET", "POST", "PUT"]);
         let log = warp::log("streamwatch");
 
         let dynamic_paths = (warp::get().and(warp::path!("streams")).and_then(streams))
@@ -330,6 +332,7 @@ pub async fn run_server() {
             .and(warp::fs::file("./build/index.html"))
             .or(warp::path("login").and(warp::fs::file("./build/index.html")))
             .or(warp::path("watchparty").and(warp::fs::file("./build/index.html")))
+            .or(warp::path("clip").and(warp::fs::file("./build/index.html")))
             .or(warp::path("static").and(warp::fs::dir("./build/static")))
             .or(warp::path::end().and(warp::fs::file("./build/index.html")))
             .or(warp::path::end().and(warp::fs::dir("./build")));

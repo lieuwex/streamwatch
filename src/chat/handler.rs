@@ -47,13 +47,14 @@ static CACHE: Lazy<Arc<Mutex<HashMap<Uuid, CacheItem>>>> =
     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
 pub async fn cache_pruner() {
-    let dur = std::time::Duration::from_secs(60 * 10);
+    const SLEEP_DURATION: std::time::Duration = std::time::Duration::from_secs(60 * 10);
+    let expiration_duration = Duration::minutes(10);
 
     loop {
         let removed_items: Vec<_> = CACHE
             .lock()
             .await
-            .drain_filter(|_, v| v.last_access < (Utc::now() - Duration::minutes(10)))
+            .drain_filter(|_, v| v.last_access < (Utc::now() - expiration_duration))
             .collect();
 
         let n_removed = removed_items.len();
@@ -67,7 +68,7 @@ pub async fn cache_pruner() {
             println!("pruned {} key(s): {}", n_removed, s);
         }
 
-        tokio::time::sleep(dur).await;
+        tokio::time::sleep(SLEEP_DURATION).await;
     }
 }
 
