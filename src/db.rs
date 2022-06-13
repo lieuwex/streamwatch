@@ -671,4 +671,24 @@ impl Database {
             created_at,
         })
     }
+
+    pub async fn add_clip_view(&self, clip_id: i64, user_id: Option<i64>) -> Result<()> {
+        let timestamp = Utc::now().timestamp();
+
+        let res = sqlx::query!(
+            r#"
+            INSERT INTO clip_views
+                (clip_id, user_id, real_time)
+            VALUES
+                (?1, ?2, ?3)
+            "#,
+            clip_id,
+            user_id,
+            timestamp,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
 }

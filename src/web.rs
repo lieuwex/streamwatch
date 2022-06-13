@@ -226,6 +226,37 @@ async fn get_stream_clips(stream_id: i64) -> Result<warp::reply::Json, warp::Rej
     Ok(warp::reply::json(&clips))
 }
 
+#[derive(Clone, Debug, Deserialize)]
+struct ClipViewParams {
+    pub username: String,
+    pub password: String,
+}
+async fn add_clip_view(
+    clip_id: i64,
+    params: ClipViewParams,
+) -> Result<impl warp::Reply, warp::Rejection> {
+    let db = DB.get().unwrap();
+
+    let user_id: Option<i64> = match params.username.as_str() {
+        "" => None,
+        username => match check!(db.get_userid_by_username(username).await) {
+            None => return Err(warp::reject()),
+            Some(id) => Some(id),
+        },
+    };
+    let password_match = match user_id {
+        None => true,
+        Some(user_id) => check!(db.check_password(user_id, &params.password).await),
+    };
+    if !password_match {
+        return Err(warp::reject());
+    }
+
+    check!(db.add_clip_view(clip_id, user_id).await);
+
+    Ok(warp::reply::with_status(warp::reply(), StatusCode::CREATED))
+}
+
 async fn create_clip(
     password: PasswordQuery,
     clip_request: CreateClipRequest,
@@ -327,7 +358,11 @@ pub async fn run_server() {
                 .and_then(create_clip))
             .or(warp::get()
                 .and(warp::path!("clips" / i64))
-                .and_then(get_stream_clips));
+                .and_then(get_stream_clips))
+            .or(warp::post()
+                .and(warp::path!("clips" / i64 / "view"))
+                .and(warp::query())
+                .and_then(add_clip_view));
         let static_paths = warp::path("video")
             .and(warp::fs::file("./build/index.html"))
             .or(warp::path("login").and(warp::fs::file("./build/index.html")))
