@@ -672,6 +672,34 @@ impl Database {
         })
     }
 
+    pub async fn update_clip(
+        &self,
+        author_id: i64,
+        clip_id: i64,
+        clip_request: CreateClipRequest,
+    ) -> Result<bool> {
+        let res = sqlx::query!(
+            r#"
+            UPDATE clips
+            SET
+                start_time=?1,
+                duration=?2,
+                title=?3
+            WHERE
+                id=?4 AND author_id=?5
+            "#,
+            clip_request.start_time,
+            clip_request.duration,
+            clip_request.title,
+            clip_id,
+            author_id,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(res.rows_affected() > 0)
+    }
+
     pub async fn add_clip_view(&self, clip_id: i64, user_id: Option<i64>) -> Result<()> {
         let timestamp = Utc::now().timestamp();
 

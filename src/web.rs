@@ -279,6 +279,33 @@ async fn create_clip(
     Ok(warp::reply::json(&clip))
 }
 
+async fn update_clip(
+    clip_id: i64,
+    password: PasswordQuery,
+    clip_request: CreateClipRequest,
+) -> Result<warp::reply::Json, warp::Rejection> {
+    let db = DB.get().unwrap();
+
+    let n: Option<String> = None; // HACK
+    let user_id = match check!(
+        db.get_userid_by_username(&clip_request.author_username)
+            .await
+    ) {
+        None => return Ok(warp::reply::json(&n)),
+        Some(id) => id,
+    };
+    if !check!(db.check_password(user_id, &password.password).await) {
+        return Ok(warp::reply::json(&n));
+    }
+
+    let updated = check!(db.update_clip(user_id, clip_id, clip_request).await);
+    if updated {
+        Ok(warp::reply::json(&n))
+    } else {
+        Err(warp::reject()) // TODO
+    }
+}
+
 pub async fn run_server() {
     let endpoints = {
         let cors = warp::cors()
@@ -359,6 +386,11 @@ pub async fn run_server() {
                 .and(warp::query())
                 .and(warp::body::json())
                 .and_then(create_clip))
+            .or(warp::put()
+                .and(warp::path!("clips" / i64))
+                .and(warp::query())
+                .and(warp::body::json())
+                .and_then(update_clip))
             .or(warp::post()
                 .and(warp::path!("clips" / i64 / "view"))
                 .and(warp::query())
