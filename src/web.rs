@@ -76,6 +76,12 @@ async fn get_stream_hype(stream_id: i64) -> Result<warp::reply::Json, warp::Reje
     Ok(warp::reply::json(&datapoints))
 }
 
+async fn get_stream_clips(stream_id: i64) -> Result<warp::reply::Json, warp::Rejection> {
+    let db = DB.get().unwrap();
+    let clips = check!(db.get_clips(Some(stream_id)).await);
+    Ok(warp::reply::json(&clips))
+}
+
 async fn get_stream_ratings(
     username: String,
     password: PasswordQuery,
@@ -220,12 +226,6 @@ async fn get_all_clips() -> Result<warp::reply::Json, warp::Rejection> {
     Ok(warp::reply::json(&clips))
 }
 
-async fn get_stream_clips(stream_id: i64) -> Result<warp::reply::Json, warp::Rejection> {
-    let db = DB.get().unwrap();
-    let clips = check!(db.get_clips(Some(stream_id)).await);
-    Ok(warp::reply::json(&clips))
-}
-
 #[derive(Clone, Debug, Deserialize)]
 struct ClipViewParams {
     pub username: String,
@@ -318,6 +318,9 @@ pub async fn run_server() {
             .or(warp::get()
                 .and(warp::path!("stream" / i64 / "hype"))
                 .and_then(get_stream_hype))
+            .or(warp::get()
+                .and(warp::path!("stream" / i64 / "clips"))
+                .and_then(get_stream_clips))
             .or(warp::post()
                 .and(warp::path!("stream" / i64 / "rate"))
                 .and(warp::query())
@@ -356,9 +359,6 @@ pub async fn run_server() {
                 .and(warp::query())
                 .and(warp::body::json())
                 .and_then(create_clip))
-            .or(warp::get()
-                .and(warp::path!("clips" / i64))
-                .and_then(get_stream_clips))
             .or(warp::post()
                 .and(warp::path!("clips" / i64 / "view"))
                 .and(warp::query())
