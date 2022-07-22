@@ -264,4 +264,5 @@ pub struct Clip {
     pub duration: i64,   // in seconds
     pub title: Option<String>,
     pub created_at: i64,
+    pub view_count: i64,
 }

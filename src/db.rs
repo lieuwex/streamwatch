@@ -610,7 +610,15 @@ impl Database {
 
     pub async fn get_clips(&self, stream_id: Option<i64>) -> Result<Vec<Clip>> {
         let mut sql = String::from(
-            "SELECT clips.*,users.username FROM clips JOIN users ON users.id=clips.author_id",
+            r#"
+                SELECT
+                    clips.*,
+                    users.username,
+                    (SELECT COUNT(*) FROM clip_views WHERE clip_id=clips.id) AS view_count
+                FROM clips
+                JOIN users
+                    ON users.id=clips.author_id
+            "#,
         );
 
         let query = if let Some(stream_id) = stream_id {
@@ -630,6 +638,7 @@ impl Database {
                 duration: row.get("duration"),
                 title: row.get("title"),
                 created_at: row.get("created_at"),
+                view_count: row.get("view_count"),
             })
             .fetch_all(&self.pool)
             .await?;
@@ -669,6 +678,7 @@ impl Database {
             duration: clip_request.duration,
             title: clip_request.title,
             created_at,
+            view_count: 0, // we just created the clip, so view_count=0 is always valid.
         })
     }
 
