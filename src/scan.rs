@@ -33,13 +33,15 @@ macro_rules! log_err {
     };
 }
 
-pub async fn remove_thumbnails_and_preview(stream_id: i64) -> Result<()> {
-    let db = DB.get().unwrap();
+pub async fn remove_thumbnails_and_preview<'c, E>(executor: E, stream_id: i64) -> Result<()>
+where
+    E: sqlx::Executor<'c, Database = sqlx::sqlite::Sqlite>,
+{
     sqlx::query!(
         "UPDATE streams SET thumbnail_count=0, preview_count=0 WHERE id = ?1",
         stream_id,
     )
-    .execute(&db.pool)
+    .execute(executor)
     .await?;
 
     log_err!(remove_file(StreamInfo::preview_path(stream_id)).await);
@@ -222,9 +224,11 @@ async fn handle_modified_stream(path: &Path, file_name: String, file_size: i64) 
         }
     };
 
-    let stream_id = {
-        let stream_id = db.get_stream_id_by_filename(&file_name).await.unwrap();
-        let duration = duration_to_seconds_float(&duration);
+    let stream_id = db.get_stream_id_by_filename(&file_name).await.unwrap();
+    let duration = duration_to_seconds_float(&duration);
+
+    {
+        let mut tx = db.pool.begin().await?;
 
         // update filesize
         sqlx::query!(
@@ -234,13 +238,13 @@ async fn handle_modified_stream(path: &Path, file_name: String, file_size: i64) 
             duration,
             stream_id,
         )
-        .execute(&db.pool)
+        .execute(&mut tx)
         .await?;
 
-        stream_id
-    };
+        remove_thumbnails_and_preview(&mut tx, stream_id).await?;
 
-    remove_thumbnails_and_preview(stream_id).await?;
+        tx.commit().await?;
+    }
 
     sender.send(Job::Thumbnails {
         stream_id,
@@ -346,7 +350,7 @@ pub async fn scan_streams() -> Result<()> {
                 all_unchanged = false;
 
                 let stream_id = db.get_stream_id_by_filename(&file_name).await.unwrap();
-                remove_thumbnails_and_preview(stream_id).await?;
+                remove_thumbnails_and_preview(&db.pool, stream_id).await?;
                 db.remove_stream(stream_id).await?;
             }
         }
