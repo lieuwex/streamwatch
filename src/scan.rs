@@ -326,7 +326,7 @@ pub async fn scan_streams() -> Result<()> {
         m
     };
 
-    let mut possible_games = { db.get_possible_games().await? };
+    let mut possible_games = db.get_possible_games().await?;
 
     let mut all_unchanged = true;
     for (file_name, (file_size, state)) in file_name_states {
