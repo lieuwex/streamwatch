@@ -35,6 +35,15 @@ CREATE TABLE clips (
 	FOREIGN KEY (stream_id) REFERENCES streams(id) ON DELETE CASCADE
 );
 
+CREATE TABLE clip_views (
+	clip_id INTEGER NOT NULL,
+	user_id INTEGER,
+	real_time INTEGER NOT NULL,
+
+	FOREIGN KEY (clip_id) REFERENCES clips(id),
+	FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
 CREATE TABLE persons (
 	id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
 	name TEXT NOT NULL
