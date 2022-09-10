@@ -1,4 +1,7 @@
-use crate::{DB, STREAMS_DIR};
+use crate::{
+    job_handler::{Job, SENDER},
+    DB, STREAMS_DIR,
+};
 
 use anyhow::Result;
 
@@ -108,9 +111,33 @@ async fn four() -> Result<()> {
     Ok(())
 }
 
+async fn five() -> Result<()> {
+    const VERSION: i64 = 5;
+
+    if get_version().await? >= VERSION {
+        return Ok(());
+    }
+    println!("running migration {}", VERSION);
+
+    let db = DB.get().unwrap();
+    let clips = db.get_clips(None).await?;
+
+    let total_count = clips.len();
+    for (i, clip) in clips.into_iter().enumerate() {
+        println!("migration 5: clip {}/{}", i + 1, total_count);
+
+        let sender = SENDER.get().unwrap();
+        sender.send(Job::ClipPreview { clip_id: clip.id })?;
+        sender.send(Job::ClipThumbnail { clip_id: clip.id })?;
+    }
+
+    Ok(())
+}
+
 pub async fn run() -> Result<()> {
     three().await?;
     four().await?;
+    five().await?;
 
     Ok(())
 }

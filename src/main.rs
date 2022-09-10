@@ -33,9 +33,9 @@ async fn main() -> Result<()> {
 
     okky!(DB, db::Database::new().await?);
 
-    migrations::run().await.unwrap();
-
     spawn_jobs(PREVIEW_WORKERS);
+
+    migrations::run().await.unwrap();
 
     tokio::spawn(async {
         cache_pruner().await;
