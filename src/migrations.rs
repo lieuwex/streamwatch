@@ -5,6 +5,16 @@ use crate::{
 
 use anyhow::Result;
 
+macro_rules! version_check {
+    ($version:expr) => {
+        const VERSION: i64 = $version;
+        if get_version().await? >= VERSION {
+            return Ok(());
+        }
+        println!("running migration {}", VERSION);
+    };
+}
+
 async fn get_version() -> Result<i64> {
     let db = DB.get().unwrap();
 
@@ -18,12 +28,7 @@ async fn get_version() -> Result<i64> {
 }
 
 async fn three() -> Result<()> {
-    const VERSION: i64 = 3;
-
-    if get_version().await? >= VERSION {
-        return Ok(());
-    }
-    println!("running migration {}", VERSION);
+    version_check!(3);
 
     let db = DB.get().unwrap();
 
@@ -76,12 +81,7 @@ async fn three() -> Result<()> {
 }
 
 async fn four() -> Result<()> {
-    const VERSION: i64 = 4;
-
-    if get_version().await? >= VERSION {
-        return Ok(());
-    }
-    println!("running migration {}", VERSION);
+    version_check!(4);
 
     let db = DB.get().unwrap();
 
@@ -112,12 +112,7 @@ async fn four() -> Result<()> {
 }
 
 async fn five() -> Result<()> {
-    const VERSION: i64 = 5;
-
-    if get_version().await? >= VERSION {
-        return Ok(());
-    }
-    println!("running migration {}", VERSION);
+    version_check!(5);
 
     let db = DB.get().unwrap();
     let clips = db.get_clips(None).await?;
