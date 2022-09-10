@@ -1,4 +1,5 @@
 use crate::chat::handle_chat_request;
+use crate::job_handler::{Job, SENDER};
 use crate::scan::scan_streams;
 use crate::util::AnyhowError;
 use crate::watchparty::{get_watch_parties, watch_party_ws};
@@ -276,6 +277,15 @@ async fn create_clip(
     }
 
     let clip = check!(db.create_clip(user_id, clip_request).await);
+
+    {
+        let sender = SENDER.get().unwrap();
+        sender.send(Job::ClipPreview { clip_id: clip.id }).unwrap();
+        sender
+            .send(Job::ClipThumbnail { clip_id: clip.id })
+            .unwrap();
+    }
+
     Ok(warp::reply::json(&clip))
 }
 

@@ -266,3 +266,27 @@ pub struct Clip {
     pub created_at: i64,
     pub view_count: i64,
 }
+impl Clip {
+    pub fn preview_path(id: i64) -> PathBuf {
+        Path::new("./previews/clips").join(id.to_string() + ".webm")
+    }
+    pub fn preview_url(&self) -> String {
+        format!("/preview/clips/{}.webm", self.id)
+        /*
+        self.has_preview
+            .then(|| format!("/preview/{}.webm", self.id))
+        */
+    }
+
+    pub fn thumbnail_path(id: i64) -> PathBuf {
+        Path::new("./thumbnails/clips").join(id.to_string() + ".webp")
+    }
+    pub fn thumbnail_url(&self) -> String {
+        format!("/thumbnail/clips/{}.webp", self.id)
+        /*
+        (0..self.thumbnail_count)
+            .map(|i| format!("/thumbnail/{}/{}.webp", self.id, i))
+            .collect()
+        */
+    }
+}

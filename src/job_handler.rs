@@ -3,11 +3,14 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::chatspeed::get_chatspeed_points;
-use crate::create_preview::{create_preview, create_thumbnails, get_sections_from_file};
+use crate::create_preview::{
+    create_clip_preview, create_clip_thumbnail, create_preview, create_thumbnails,
+    get_sections_from_file,
+};
 use crate::loudness::get_loudness_points;
-use crate::{okky, DB};
+use crate::{okky, DB, STREAMS_DIR};
 
-use streamwatch_shared::types::{StreamInfo, StreamJson};
+use streamwatch_shared::types::{Clip, StreamInfo, StreamJson};
 
 use tokio::sync::{self, mpsc};
 
@@ -23,11 +26,22 @@ async fn expect_stream(stream_id: i64) -> Result<StreamJson> {
     }
 }
 
+async fn expect_clip(clip_id: i64) -> Result<Clip> {
+    let db = DB.get().unwrap();
+    let clips = db.get_clips(None).await?;
+    match clips.into_iter().find(|c| c.id == clip_id) {
+        None => Err(anyhow!("clip {} not found", clip_id)),
+        Some(s) => Ok(s),
+    }
+}
+
 pub static SENDER: OnceCell<JobSender> = OnceCell::new();
 
 pub struct JobSender {
     thumbnail_jobs: mpsc::UnboundedSender<Job>,
     preview_jobs: mpsc::UnboundedSender<Job>,
+    clip_thumbnail_jobs: mpsc::UnboundedSender<Job>,
+    clip_preview_jobs: mpsc::UnboundedSender<Job>,
     loudness_jobs: mpsc::UnboundedSender<Job>,
     chatspeed_jobs: mpsc::UnboundedSender<Job>,
 }
@@ -36,6 +50,8 @@ impl JobSender {
         match job {
             j @ Job::Thumbnails { .. } => self.thumbnail_jobs.send(j),
             j @ Job::Preview { .. } => self.preview_jobs.send(j),
+            j @ Job::ClipThumbnail { .. } => self.clip_thumbnail_jobs.send(j),
+            j @ Job::ClipPreview { .. } => self.clip_preview_jobs.send(j),
             j @ Job::Loudness { .. } => self.loudness_jobs.send(j),
             j @ Job::Chatspeed { .. } => self.chatspeed_jobs.send(j),
         }
@@ -45,6 +61,8 @@ impl JobSender {
 pub struct JobReceiver {
     thumbnail_jobs: mpsc::UnboundedReceiver<Job>,
     preview_jobs: mpsc::UnboundedReceiver<Job>,
+    clip_thumbnail_jobs: mpsc::UnboundedReceiver<Job>,
+    clip_preview_jobs: mpsc::UnboundedReceiver<Job>,
     loudness_jobs: mpsc::UnboundedReceiver<Job>,
     chatspeed_jobs: mpsc::UnboundedReceiver<Job>,
 }
@@ -54,6 +72,10 @@ impl JobReceiver {
         tokio::pin!(thumbnails);
         let previews = self.preview_jobs.recv();
         tokio::pin!(previews);
+        let clip_thumbnails = self.clip_thumbnail_jobs.recv();
+        tokio::pin!(clip_thumbnails);
+        let clip_previews = self.clip_preview_jobs.recv();
+        tokio::pin!(clip_previews);
         let chatspeed = self.chatspeed_jobs.recv();
         tokio::pin!(chatspeed);
         let loudness = self.loudness_jobs.recv();
@@ -63,6 +85,8 @@ impl JobReceiver {
             biased;
             Some(job) = &mut thumbnails => Some(job),
             Some(job) = &mut previews => Some(job),
+            Some(job) = &mut clip_thumbnails => Some(job),
+            Some(job) = &mut clip_previews => Some(job),
             Some(job) = &mut chatspeed => Some(job),
             Some(job) = &mut loudness => Some(job),
             else => None,
@@ -74,6 +98,8 @@ impl JobReceiver {
 pub enum Job {
     Preview { stream_id: i64, path: PathBuf },
     Thumbnails { stream_id: i64, path: PathBuf },
+    ClipPreview { clip_id: i64 },
+    ClipThumbnail { clip_id: i64 },
     Loudness { stream_id: i64 },
     Chatspeed { stream_id: i64 },
 }
@@ -96,6 +122,36 @@ async fn make_preview(stream_id: i64, path: PathBuf) -> Result<()> {
     .await?;
 
     println!("[{}] made preview in {:?}", stream_id, start.elapsed());
+
+    Ok(())
+}
+
+async fn make_clip_preview(clip_id: i64) -> Result<()> {
+    let clip = expect_clip(clip_id).await?;
+    let stream = expect_stream(clip.stream_id).await?;
+
+    let start = Instant::now();
+
+    let preview_path = Clip::preview_path(clip_id);
+    create_clip_preview(
+        &stream.info.file_name.stream_path(STREAMS_DIR),
+        &preview_path,
+        clip.start_time,
+        clip.duration,
+    )
+    .await?;
+
+    /*
+    let db = DB.get().unwrap();
+    sqlx::query!(
+        "UPDATE streams SET preview_count = 1 WHERE id = ?1",
+        stream_id,
+    )
+    .execute(&db.pool)
+    .await?;
+    */
+
+    println!("[{}] made clip preview in {:?}", clip_id, start.elapsed());
 
     Ok(())
 }
@@ -126,6 +182,36 @@ async fn make_thumbnails(stream_id: i64, path: PathBuf) -> Result<()> {
         sections.len(),
         start.elapsed()
     );
+
+    Ok(())
+}
+
+async fn make_clip_thumbnail(clip_id: i64) -> Result<()> {
+    let clip = expect_clip(clip_id).await?;
+    let stream = expect_stream(clip.stream_id).await?;
+    let start = Instant::now();
+
+    let thumbnail_path = Clip::thumbnail_path(clip_id);
+    create_clip_thumbnail(
+        &stream.info.file_name.stream_path(STREAMS_DIR),
+        &thumbnail_path,
+        clip.start_time,
+    )
+    .await?;
+
+    /*
+    let db = DB.get().unwrap();
+    let thumbnail_count = items.len() as i64;
+    sqlx::query!(
+        "UPDATE streams SET thumbnail_count = ?1 WHERE id = ?2",
+        thumbnail_count,
+        stream_id,
+    )
+    .execute(&db.pool)
+    .await?;
+    */
+
+    println!("[{}] made thumbnail in {:?}", clip_id, start.elapsed());
 
     Ok(())
 }
@@ -171,6 +257,8 @@ async fn job_watcher(receiver: Arc<sync::Mutex<JobReceiver>>) {
         let res = match job {
             Job::Preview { stream_id, path } => make_preview(stream_id, path).await,
             Job::Thumbnails { stream_id, path } => make_thumbnails(stream_id, path).await,
+            Job::ClipPreview { clip_id } => make_clip_preview(clip_id).await,
+            Job::ClipThumbnail { clip_id } => make_clip_thumbnail(clip_id).await,
             Job::Loudness { stream_id } => update_loudness(stream_id).await,
             Job::Chatspeed { stream_id } => update_chatspeed(stream_id).await,
         };
@@ -184,12 +272,16 @@ pub fn spawn_jobs(count: usize) {
     let (sender, receiver) = {
         let (thumb_sender, thumb_receiver) = sync::mpsc::unbounded_channel();
         let (prev_sender, prev_receiver) = sync::mpsc::unbounded_channel();
+        let (clip_thumb_sender, clip_thumb_receiver) = sync::mpsc::unbounded_channel();
+        let (clip_prev_sender, clip_prev_receiver) = sync::mpsc::unbounded_channel();
         let (loudness_sender, loudness_receiver) = sync::mpsc::unbounded_channel();
         let (chatspeed_sender, chatspeed_receiver) = sync::mpsc::unbounded_channel();
 
         let sender = JobSender {
             thumbnail_jobs: thumb_sender,
             preview_jobs: prev_sender,
+            clip_thumbnail_jobs: clip_thumb_sender,
+            clip_preview_jobs: clip_prev_sender,
             loudness_jobs: loudness_sender,
             chatspeed_jobs: chatspeed_sender,
         };
@@ -197,6 +289,8 @@ pub fn spawn_jobs(count: usize) {
         let receiver = JobReceiver {
             thumbnail_jobs: thumb_receiver,
             preview_jobs: prev_receiver,
+            clip_thumbnail_jobs: clip_thumb_receiver,
+            clip_preview_jobs: clip_prev_receiver,
             loudness_jobs: loudness_receiver,
             chatspeed_jobs: chatspeed_receiver,
         };

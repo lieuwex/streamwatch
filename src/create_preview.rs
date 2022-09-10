@@ -90,6 +90,28 @@ pub async fn create_thumbnails(
     */
 }
 
+/// Creates webp thumbnail for a clip
+pub async fn create_clip_thumbnail(path: &Path, output: &Path, begin: i64) -> io::Result<()> {
+    create_dir_all(output.ancestors().nth(1).unwrap()).await?;
+
+    let mut handle = Command::new("ffmpeg")
+        .args(&[
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-ss",
+            &begin.to_string(),
+            "-i",
+        ])
+        .arg(path.as_os_str())
+        .args(&["-frames:v", "1", "-y"])
+        .arg(output.as_os_str())
+        .spawn()?;
+    handle.wait().await?;
+
+    Ok(())
+}
+
 /// Create a low-resolution av1 preview
 pub async fn create_preview(path: &Path, output: &Path, sections: &[(i32, i32)]) -> io::Result<()> {
     create_dir_all(output.ancestors().nth(1).unwrap()).await?;
@@ -189,3 +211,53 @@ pub async fn create_preview(path: &Path, output: &Path, sections: &[(i32, i32)])
     Ok(())
 }
 */
+
+/// Create a low-resolution av1 preview for a clip
+pub async fn create_clip_preview(
+    path: &Path,
+    output: &Path,
+    begin: i64,
+    duration: i64,
+) -> io::Result<()> {
+    create_dir_all(output.ancestors().nth(1).unwrap()).await?;
+
+    let path_string = path.as_os_str();
+
+    let mut cmd = Command::new("nice");
+    cmd.args(&["-n10", "ffmpeg", "-hide_banner", "-loglevel", "error"]);
+
+    cmd.arg("-ss");
+    cmd.arg(begin.to_string());
+    cmd.arg("-t");
+    cmd.arg(duration.to_string());
+    cmd.arg("-i");
+    cmd.arg(path_string);
+
+    let filter_complex = "[0:v]scale=432:243[out2];[out2]fps=30";
+
+    cmd.args(&[
+        "-filter_complex",
+        &filter_complex,
+        "-c:v",
+        "libaom-av1",
+        "-cpu-used",
+        "1",
+        "-row-mt",
+        "1",
+        "-threads",
+        "8",
+        "-b:v",
+        "150k",
+        "-minrate",
+        "0k",
+        "-maxrate",
+        "180k",
+        "-an",
+        "-y",
+    ]);
+    cmd.arg(output.as_os_str());
+
+    let mut handle = cmd.spawn()?;
+    handle.wait().await?;
+    Ok(())
+}
