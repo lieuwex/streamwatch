@@ -6,13 +6,22 @@ use crate::{
 use anyhow::Result;
 
 macro_rules! version_check {
-    ($version:expr) => {
+    ($version:expr) => {{
         const VERSION: i64 = $version;
         if get_version().await? >= VERSION {
             return Ok(());
         }
         println!("running migration {}", VERSION);
-    };
+
+        || {
+            let db = DB.get().unwrap();
+            sqlx::query!(
+                "UPDATE meta SET value = ? WHERE key = 'schema_version'",
+                VERSION
+            )
+            .execute(&db.pool)
+        }
+    }};
 }
 
 async fn get_version() -> Result<i64> {
@@ -28,7 +37,7 @@ async fn get_version() -> Result<i64> {
 }
 
 async fn three() -> Result<()> {
-    version_check!(3);
+    let done = version_check!(3);
 
     let db = DB.get().unwrap();
 
@@ -70,18 +79,13 @@ async fn three() -> Result<()> {
         tx.commit().await?;
     }
 
-    sqlx::query!(
-        "UPDATE meta SET value = ? WHERE key = 'schema_version'",
-        VERSION
-    )
-    .execute(&db.pool)
-    .await?;
+    done().await?;
 
     Ok(())
 }
 
 async fn four() -> Result<()> {
-    version_check!(4);
+    let done = version_check!(4);
 
     let db = DB.get().unwrap();
 
@@ -101,18 +105,13 @@ async fn four() -> Result<()> {
         tx.commit().await?;
     }
 
-    sqlx::query!(
-        "UPDATE meta SET value = ? WHERE key = 'schema_version'",
-        VERSION
-    )
-    .execute(&db.pool)
-    .await?;
+    done().await?;
 
     Ok(())
 }
 
 async fn five() -> Result<()> {
-    version_check!(5);
+    let done = version_check!(5);
 
     let db = DB.get().unwrap();
     let clips = db.get_clips(None).await?;
@@ -125,6 +124,8 @@ async fn five() -> Result<()> {
         sender.send(Job::ClipPreview { clip_id: clip.id })?;
         sender.send(Job::ClipThumbnail { clip_id: clip.id })?;
     }
+
+    done().await?;
 
     Ok(())
 }
