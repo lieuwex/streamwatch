@@ -69,26 +69,20 @@ pub struct JobReceiver {
 impl JobReceiver {
     pub async fn recv(&mut self) -> Option<Job> {
         let thumbnails = self.thumbnail_jobs.recv();
-        tokio::pin!(thumbnails);
         let previews = self.preview_jobs.recv();
-        tokio::pin!(previews);
         let clip_thumbnails = self.clip_thumbnail_jobs.recv();
-        tokio::pin!(clip_thumbnails);
         let clip_previews = self.clip_preview_jobs.recv();
-        tokio::pin!(clip_previews);
         let chatspeed = self.chatspeed_jobs.recv();
-        tokio::pin!(chatspeed);
         let loudness = self.loudness_jobs.recv();
-        tokio::pin!(loudness);
 
         tokio::select! {
             biased;
-            Some(job) = &mut thumbnails => Some(job),
-            Some(job) = &mut previews => Some(job),
-            Some(job) = &mut clip_thumbnails => Some(job),
-            Some(job) = &mut clip_previews => Some(job),
-            Some(job) = &mut chatspeed => Some(job),
-            Some(job) = &mut loudness => Some(job),
+            Some(job) = thumbnails => Some(job),
+            Some(job) = previews => Some(job),
+            Some(job) = clip_thumbnails => Some(job),
+            Some(job) = clip_previews => Some(job),
+            Some(job) = chatspeed => Some(job),
+            Some(job) = loudness => Some(job),
             else => None,
         }
     }
