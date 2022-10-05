@@ -105,12 +105,12 @@ impl StreamFileName {
             .as_mapping()
             .ok_or(anyhow!("parsing error: expected mapping"))?;
 
-        let datapoints = match info.get(&"datapoints".into()) {
+        let datapoints = match info.get("datapoints") {
             Some(value) => serde_yaml::from_value(value.to_owned())?,
             None => vec![],
         };
 
-        let jumpcuts = match info.get(&"jumpcuts".into()) {
+        let jumpcuts = match info.get("jumpcuts") {
             Some(value) => serde_yaml::from_value(value.to_owned())?,
             None => vec![],
         };
