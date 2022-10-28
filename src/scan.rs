@@ -254,6 +254,8 @@ async fn handle_modified_stream(path: &Path, file_name: String, file_size: i64) 
         stream_id,
         path: path.to_owned(),
     })?;
+    sender.send(Job::Loudness { stream_id })?;
+    sender.send(Job::Chatspeed { stream_id })?;
 
     Ok(())
 }
