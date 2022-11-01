@@ -123,8 +123,9 @@ pub async fn handle_chat_request(
             Some(reader) => check!(reader.get_between(request.start, request.end).await),
             None => vec![],
         };
-        let db_messages = check!(db::get_messages(stream_id, request.start, request.end).await);
-        merge(file_messages, db_messages, |x| x.ts).unwrap()
+        //let db_messages = check!(db::get_messages(stream_id, request.start, request.end).await);
+        //merge(file_messages, db_messages, |x| x.ts).unwrap()
+        file_messages
     };
 
     Ok(warp::reply::json(&Response {
