@@ -8,7 +8,6 @@ use streamwatch_shared::types::{
 
 use std::collections::HashMap;
 use std::ops::DerefMut;
-use std::sync::Arc;
 use std::time::Instant;
 
 use sqlx::sqlite::{SqlitePool, SqliteRow};
@@ -19,7 +18,6 @@ use anyhow::Result;
 use chrono::{DateTime, TimeZone, Utc};
 
 use futures::TryStreamExt;
-use tokio::sync::Mutex;
 
 pub struct Database {
     pub pool: sqlx::SqlitePool,
@@ -225,7 +223,7 @@ impl Database {
 
     pub async fn replace_games<'c, I>(
         &self,
-        tx: Arc<Mutex<Transaction<'c, sqlx::Sqlite>>>,
+        tx: &mut Transaction<'c, sqlx::Sqlite>,
         stream_id: i64,
         items: I,
     ) -> Result<()>
@@ -233,7 +231,7 @@ impl Database {
         I: IntoIterator<Item = GameItem>,
     {
         sqlx::query!("DELETE FROM game_features WHERE stream_id = ?1", stream_id)
-            .execute(tx.lock().await.deref_mut())
+            .execute(tx.deref_mut())
             .await?;
 
         for item in items {
@@ -245,7 +243,7 @@ impl Database {
                 item.id,
                 start_time,
             )
-            .execute(tx.lock().await.deref_mut())
+            .execute(tx.deref_mut())
             .await?;
         }
 

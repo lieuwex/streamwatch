@@ -1,5 +1,5 @@
 use crate::job_handler::{Job, SENDER};
-use crate::{arc_mutex_unwrap, DB, STREAMS_DIR};
+use crate::{DB, STREAMS_DIR};
 
 use streamwatch_shared::functions::{
     duration_to_seconds_float, get_video_duration, parse_filename,
@@ -11,10 +11,8 @@ use streamwatch_shared::types::{
 use std::collections::HashMap;
 use std::ops::DerefMut;
 use std::path::Path;
-use std::sync::Arc;
 
 use tokio::fs::{read_dir, remove_dir_all, remove_file};
-use tokio::sync::Mutex;
 use tokio_stream::wrappers::ReadDirStream;
 
 use futures::stream::iter;
@@ -81,7 +79,7 @@ async fn handle_new_stream(
         .await?
         .unwrap_or((vec![], vec![]));
 
-    let tx = Arc::new(Mutex::new(db.pool.begin().await?));
+    let mut tx = db.pool.begin().await?;
 
     let stream_id: i64 = {
         let duration = duration_to_seconds_float(&duration);
@@ -120,15 +118,15 @@ async fn handle_new_stream(
             jumpcuts_json,
             inserted_at,
         )
-        .execute(tx.lock().await.deref_mut())
+        .execute(&mut tx)
         .await?
         .last_insert_rowid()
     };
 
-    struct FoldState<'a> {
+    struct FoldState<'a, 'b> {
         games: Vec<GameFeature>,
         possible_games: &'a mut Vec<GameInfo>,
-        tx: Arc<Mutex<sqlx::Transaction<'a, sqlx::Sqlite>>>,
+        tx: &'b mut sqlx::Transaction<'a, sqlx::Sqlite>,
     }
 
     let games = iter(datapoints)
@@ -137,9 +135,9 @@ async fn handle_new_stream(
             FoldState {
                 games: vec![],
                 possible_games,
-                tx: tx.clone(),
+                tx: &mut tx,
             },
-            |mut state: FoldState<'_>, datapoint| async move {
+            |mut state: FoldState<'_, '_>, datapoint| async move {
                 let last_item_same_game = state
                     .games
                     .last()
@@ -161,7 +159,7 @@ async fn handle_new_stream(
                     None => {
                         let game = db
                             .insert_possible_game(
-                                state.tx.clone().lock_owned().await.deref_mut(),
+                                state.tx.deref_mut(),
                                 datapoint.game.clone(),
                                 Some(datapoint.game),
                                 None,
@@ -187,9 +185,9 @@ async fn handle_new_stream(
             id: g.info.id,
             start_time: g.start_time,
         });
-    db.replace_games(tx.clone(), stream_id, games).await?;
+    db.replace_games(&mut tx, stream_id, games).await?;
 
-    arc_mutex_unwrap!(tx)?.commit().await?;
+    tx.commit().await?;
 
     sender.send(Job::Thumbnails {
         stream_id,

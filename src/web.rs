@@ -3,16 +3,13 @@ use crate::job_handler::{Job, SENDER};
 use crate::scan::scan_streams;
 use crate::util::AnyhowError;
 use crate::watchparty::{get_watch_parties, watch_party_ws};
-use crate::{arc_mutex_unwrap, check, DB, STREAMS_DIR};
+use crate::{check, DB, STREAMS_DIR};
 
 use streamwatch_shared::types::{ConversionProgress, CreateClipRequest, GameItem, StreamJson};
 
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::str::FromStr;
-use std::sync::Arc;
-
-use tokio::sync::Mutex;
 
 use warp::http::StatusCode;
 use warp::{Filter, Reply};
@@ -54,9 +51,9 @@ async fn replace_games(
 ) -> Result<warp::reply::Response, warp::Rejection> {
     let db = DB.get().unwrap();
 
-    let tx = Arc::new(Mutex::new(db.pool.begin().await.unwrap()));
-    check!(db.replace_games(tx.clone(), stream_id, items).await);
-    check!(arc_mutex_unwrap!(tx)).commit().await.unwrap();
+    let mut tx = db.pool.begin().await.unwrap();
+    check!(db.replace_games(&mut tx, stream_id, items).await);
+    tx.commit().await.unwrap();
 
     Ok(warp::reply().into_response())
 }

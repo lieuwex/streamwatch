@@ -78,16 +78,3 @@ macro_rules! check {
         }
     };
 }
-
-#[macro_export]
-macro_rules! arc_mutex_unwrap {
-    ($arc:expr) => {
-        match Arc::try_unwrap($arc) {
-            Ok(mutex) => Ok(mutex.into_inner()),
-            Err(arc) => Err(anyhow::anyhow!(
-                "arc is owned more than once: {}",
-                Arc::strong_count(&arc)
-            )),
-        }
-    };
-}
