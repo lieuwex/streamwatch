@@ -31,9 +31,7 @@ pub async fn get_chatspeed_points(stream: StreamInfo) -> Result<Vec<(DateTime<Ut
     let res: Vec<(DateTime<Utc>, usize)> = (0..=duration.num_seconds())
         .map(|s| {
             let ts = ts + Duration::seconds(s);
-
             let count = map.get(&ts.timestamp()).cloned().unwrap_or(0);
-
             (ts, count)
         })
         .collect();

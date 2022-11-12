@@ -125,7 +125,7 @@ pub async fn get_loudness_points(stream: &StreamInfo) -> Result<Vec<LoudnessData
     let res = _get_loudness_points(&stream.file_name)
         .await?
         .into_iter()
-        .group_by(|(pos, _)| pos.round())
+        .group_by(|(pos, _)| pos.round() as i64)
         .into_iter()
         .map(|(pos, xs)| {
             let avg = {
@@ -136,7 +136,7 @@ pub async fn get_loudness_points(stream: &StreamInfo) -> Result<Vec<LoudnessData
             };
 
             LoudnessDatapoint {
-                ts: ts + Duration::seconds(pos as i64),
+                ts: ts + Duration::seconds(pos),
                 momentary: avg.momentary,
                 short_term: avg.short_term,
                 integrated: avg.integrated,

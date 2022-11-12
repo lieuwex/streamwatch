@@ -56,10 +56,10 @@ pub async fn get_volume_points(stream: &StreamInfo) -> Result<Vec<(DateTime<Utc>
     let res = _get_volume_points(stream)
         .await?
         .into_iter()
-        .group_by(|(pos, _)| pos.round())
+        .group_by(|(pos, _)| pos.round() as i64)
         .into_iter()
         .map(|(pos, xs)| {
-            let pos = Duration::seconds(pos as i64);
+            let pos = Duration::seconds(pos);
 
             let avg = {
                 let xs: Vec<_> = xs.map(|(_, x)| x).collect();

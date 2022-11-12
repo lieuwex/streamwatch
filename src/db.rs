@@ -11,7 +11,7 @@ use std::ops::DerefMut;
 use std::time::Instant;
 
 use sqlx::sqlite::{SqlitePool, SqliteRow};
-use sqlx::{Row, Transaction};
+use sqlx::{Row, SqliteExecutor, Transaction};
 
 use anyhow::Result;
 
@@ -196,16 +196,13 @@ impl Database {
             .await?;
         Ok(res)
     }
-    pub async fn insert_possible_game<'c, E>(
+    pub async fn insert_possible_game<'c>(
         &self,
-        executor: E,
+        executor: impl SqliteExecutor<'c>,
         name: String,
         twitch_name: Option<String>,
         platform: Option<String>,
-    ) -> Result<GameInfo>
-    where
-        E: sqlx::Executor<'c, Database = sqlx::sqlite::Sqlite>,
-    {
+    ) -> Result<GameInfo> {
         let res = sqlx::query!(
             "INSERT INTO GAMES(name, platform, twitch_name) VALUES(?1, ?2, ?3)",
             name,

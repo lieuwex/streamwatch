@@ -295,10 +295,9 @@ pub fn spawn_jobs(count: usize) {
     let receiver = Arc::new(sync::Mutex::new(receiver));
     okky!(SENDER, sender);
 
-    for _ in 0..count {
-        let receiver_cloned = receiver.clone();
+    itertools::repeat_n(receiver, count).for_each(|receiver| {
         tokio::spawn(async move {
-            job_watcher(receiver_cloned).await;
+            job_watcher(receiver).await;
         });
-    }
+    });
 }
