@@ -19,6 +19,7 @@ use chrono::{DateTime, TimeZone, Utc};
 
 use futures::TryStreamExt;
 
+#[derive(Debug)]
 pub struct Database {
     pub pool: sqlx::SqlitePool,
 }

@@ -37,6 +37,7 @@ async fn expect_clip(clip_id: i64) -> Result<Clip> {
 
 pub static SENDER: OnceCell<JobSender> = OnceCell::new();
 
+#[derive(Debug)]
 pub struct JobSender {
     thumbnail_jobs: mpsc::UnboundedSender<Job>,
     preview_jobs: mpsc::UnboundedSender<Job>,
