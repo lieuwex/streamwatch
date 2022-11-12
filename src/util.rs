@@ -70,7 +70,7 @@ macro_rules! check {
             Ok(x) => x,
             Err(e) => {
                 eprintln!("returning error from web request handler: {:?}", e);
-                return Err(warp::reject::custom(AnyhowError(e)));
+                return Err(warp::reject::custom(AnyhowError(anyhow::anyhow!(e))));
             }
         }
     };

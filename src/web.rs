@@ -51,9 +51,8 @@ async fn replace_games(
 ) -> Result<warp::reply::Response, warp::Rejection> {
     let db = DB.get().unwrap();
 
-    let mut tx = db.pool.begin().await.unwrap();
-    check!(db.replace_games(&mut tx, stream_id, items).await);
-    tx.commit().await.unwrap();
+    let mut conn = check!(db.pool.acquire().await);
+    check!(db.replace_games(&mut conn, stream_id, items).await);
 
     Ok(warp::reply().into_response())
 }
