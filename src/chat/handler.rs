@@ -8,7 +8,6 @@ use crate::{
 };
 
 use std::collections::hash_map::{Entry, HashMap};
-use std::sync::Arc;
 
 use chrono::{serde::ts_milliseconds, DateTime, Duration, Utc};
 
@@ -43,8 +42,7 @@ struct CacheItem {
     file_reader: Option<FileReader>,
 }
 
-static CACHE: Lazy<Arc<Mutex<HashMap<Uuid, CacheItem>>>> =
-    Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+static CACHE: Lazy<Mutex<HashMap<Uuid, CacheItem>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 
 pub async fn cache_pruner() {
     const SLEEP_DURATION: std::time::Duration = std::time::Duration::from_secs(60 * 10);
