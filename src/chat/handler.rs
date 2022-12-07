@@ -1,11 +1,6 @@
-use super::db;
 use super::file_reader::FileReader;
 use super::types::Item;
-use crate::{
-    check,
-    util::{merge, AnyhowError},
-    DB, STREAMS_DIR,
-};
+use crate::{check, conn, db::Database, util::AnyhowError, DB, STREAMS_DIR};
 
 use std::collections::hash_map::{Entry, HashMap};
 
@@ -93,10 +88,7 @@ pub async fn handle_chat_request(
             Entry::Vacant(entry) => {
                 println!("cache miss for {} ({})", session_token, stream_id);
 
-                let stream = match {
-                    let db = DB.get().unwrap();
-                    check!(db.get_stream_by_id(stream_id).await)
-                } {
+                let stream = match check!(Database::get_stream_by_id(conn!(), stream_id).await) {
                     None => return Err(warp::reject::not_found()),
                     Some(s) => s,
                 };

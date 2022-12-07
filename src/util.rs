@@ -1,4 +1,7 @@
+use sqlx::{pool::PoolConnection, Sqlite};
 use warp::reject::Reject;
+
+use crate::DB;
 
 #[macro_export]
 macro_rules! okky {
@@ -74,4 +77,19 @@ macro_rules! check {
             }
         }
     };
+}
+
+#[macro_export]
+macro_rules! conn {
+    () => {{
+        use std::borrow::BorrowMut;
+
+        let db = DB.get().unwrap();
+        check!(db.pool.acquire().await).borrow_mut()
+    }};
+}
+
+pub async fn get_conn() -> anyhow::Result<PoolConnection<Sqlite>> {
+    let db = DB.get().unwrap();
+    Ok(db.pool.acquire().await?)
 }

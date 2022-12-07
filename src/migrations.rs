@@ -1,5 +1,9 @@
+use std::borrow::BorrowMut;
+
 use crate::{
+    db::Database,
     job_handler::{Job, SENDER},
+    util::get_conn,
     DB, STREAMS_DIR,
 };
 
@@ -41,7 +45,7 @@ async fn three() -> Result<()> {
 
     let db = DB.get().unwrap();
 
-    let streams = db.get_streams().await?;
+    let streams = Database::get_streams(get_conn().await?.borrow_mut()).await?;
     for stream in streams {
         let (datapoints, jumpcuts) = match stream
             .info
@@ -89,7 +93,7 @@ async fn four() -> Result<()> {
 
     let db = DB.get().unwrap();
 
-    let streams = db.get_streams().await?;
+    let streams = Database::get_streams(get_conn().await?.borrow_mut()).await?;
 
     {
         let mut tx = db.pool.begin().await?;
@@ -113,8 +117,7 @@ async fn four() -> Result<()> {
 async fn five() -> Result<()> {
     let done = version_check!(5);
 
-    let db = DB.get().unwrap();
-    let clips = db.get_clips(None).await?;
+    let clips = Database::get_clips(get_conn().await?.borrow_mut(), None).await?;
 
     let total_count = clips.len();
     for (i, clip) in clips.into_iter().enumerate() {

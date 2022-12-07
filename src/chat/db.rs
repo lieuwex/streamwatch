@@ -1,11 +1,12 @@
+use std::borrow::BorrowMut;
+
 use super::types::Item;
 
-use crate::DB;
+use crate::db::Database;
+use crate::util::get_conn;
 
 use anyhow::Result;
-
 use chrono::{DateTime, Utc};
-
 use serde_json::{json, value::to_raw_value};
 
 pub async fn get_messages(
@@ -13,10 +14,8 @@ pub async fn get_messages(
     start: DateTime<Utc>,
     end: DateTime<Utc>,
 ) -> Result<Vec<Item>> {
-    let items = {
-        let db = DB.get().unwrap();
-        db.get_messages(stream_id, start, end).await?
-    };
+    let items =
+        Database::get_messages(get_conn().await?.borrow_mut(), stream_id, start, end).await?;
 
     let items = items
         .into_iter()

@@ -10,8 +10,8 @@ use std::borrow::BorrowMut;
 use std::collections::HashMap;
 use std::time::Instant;
 
-use sqlx::sqlite::{SqlitePool, SqliteRow};
-use sqlx::{Row, SqliteExecutor, Transaction};
+use sqlx::sqlite::{SqliteConnection, SqlitePool, SqliteRow};
+use sqlx::{Connection, Row};
 
 use anyhow::Result;
 
@@ -86,7 +86,10 @@ impl Database {
         }
     }
 
-    pub async fn get_stream_by_id(&self, stream_id: i64) -> Result<Option<StreamJson>> {
+    pub async fn get_stream_by_id(
+        conn: &mut SqliteConnection,
+        stream_id: i64,
+    ) -> Result<Option<StreamJson>> {
         let instant = Instant::now();
         let stream = sqlx::query(
             r#"
@@ -114,14 +117,14 @@ impl Database {
         )
         .bind(stream_id)
         .map(Self::map_stream)
-        .fetch_optional(&self.pool)
+        .fetch_optional(conn.borrow_mut())
         .await?;
         println!("get_stream_by_id took {:?}", instant.elapsed());
 
         Ok(stream)
     }
 
-    pub async fn get_streams(&self) -> Result<Vec<StreamJson>> {
+    pub async fn get_streams(conn: &mut SqliteConnection) -> Result<Vec<StreamJson>> {
         let instant = Instant::now();
         let streams = sqlx::query(
             r#"
@@ -146,29 +149,34 @@ impl Database {
         "#,
         )
         .map(Self::map_stream)
-        .fetch_all(&self.pool)
+        .fetch_all(conn.borrow_mut())
         .await?;
         println!("get_streams took {:?}", instant.elapsed());
 
         Ok(streams)
     }
 
-    pub async fn get_stream_id_by_filename(&self, file_name: &str) -> Option<i64> {
+    pub async fn get_stream_id_by_filename(
+        conn: &mut SqliteConnection,
+        file_name: &str,
+    ) -> Option<i64> {
         sqlx::query!("SELECT id from streams where filename = ?1", file_name)
             .map(|row| row.id)
-            .fetch_one(&self.pool)
+            .fetch_one(conn.borrow_mut())
             .await
             .ok()
     }
 
-    pub async fn remove_stream(&self, stream_id: i64) -> Result<()> {
+    pub async fn remove_stream(conn: &mut SqliteConnection, stream_id: i64) -> Result<()> {
         sqlx::query!("DELETE FROM streams WHERE id = ?1", stream_id)
-            .execute(&self.pool)
+            .execute(conn.borrow_mut())
             .await?;
         Ok(())
     }
 
-    pub async fn get_processing_streams(&self) -> Result<Vec<ConversionProgress>> {
+    pub async fn get_processing_streams(
+        conn: &mut SqliteConnection,
+    ) -> Result<Vec<ConversionProgress>> {
         let items = sqlx::query!("SELECT * FROM stream_conversion_progress")
             .map(|row| ConversionProgress {
                 id: row.id,
@@ -179,12 +187,12 @@ impl Database {
                 progress: seconds_float_to_duration(f64::from(row.progress)), // HACK: should be f64 directly
                 eta: row.eta.map(|x| f64::from(x)), // HACK: should be f64 directly
             })
-            .fetch_all(&self.pool)
+            .fetch_all(conn.borrow_mut())
             .await?;
         Ok(items)
     }
 
-    pub async fn get_possible_games(&self) -> Result<Vec<GameInfo>> {
+    pub async fn get_possible_games(conn: &mut SqliteConnection) -> Result<Vec<GameInfo>> {
         let res = sqlx::query!("SELECT id,name,platform,twitch_name FROM games ORDER BY name")
             .map(|row| GameInfo {
                 id: row.id,
@@ -192,13 +200,12 @@ impl Database {
                 twitch_name: row.twitch_name,
                 platform: row.platform,
             })
-            .fetch_all(&self.pool)
+            .fetch_all(conn.borrow_mut())
             .await?;
         Ok(res)
     }
     pub async fn insert_possible_game<'c>(
-        &self,
-        executor: impl SqliteExecutor<'c>,
+        conn: &mut SqliteConnection,
         name: String,
         twitch_name: Option<String>,
         platform: Option<String>,
@@ -209,7 +216,7 @@ impl Database {
             platform,
             twitch_name
         )
-        .execute(executor)
+        .execute(conn)
         .await?;
         Ok(GameInfo {
             name,
@@ -220,16 +227,17 @@ impl Database {
     }
 
     pub async fn replace_games<I>(
-        &self,
-        tx: &mut sqlx::sqlite::SqliteConnection,
+        conn: &mut SqliteConnection,
         stream_id: i64,
         items: I,
     ) -> Result<()>
     where
         I: IntoIterator<Item = GameItem>,
     {
+        let mut tx = conn.begin().await?;
+
         sqlx::query!("DELETE FROM game_features WHERE stream_id = ?1", stream_id)
-            .execute(tx.borrow_mut())
+            .execute(&mut tx)
             .await?;
 
         for item in items {
@@ -241,21 +249,26 @@ impl Database {
                 item.id,
                 start_time,
             )
-            .execute(tx.borrow_mut())
+            .execute(&mut tx)
             .await?;
         }
 
+        tx.commit().await?;
         Ok(())
     }
 
-    pub async fn get_possible_persons(&self) -> Result<Vec<PersonInfo>> {
+    pub async fn get_possible_persons(conn: &mut SqliteConnection) -> Result<Vec<PersonInfo>> {
         let res = sqlx::query_as!(PersonInfo, "SELECT id,name FROM persons ORDER BY name")
-            .fetch_all(&self.pool)
+            .fetch_all(conn.borrow_mut())
             .await?;
         Ok(res)
     }
-    pub async fn replace_persons(&self, stream_id: i64, person_ids: Vec<i64>) -> Result<()> {
-        let mut tx = self.pool.begin().await?;
+    pub async fn replace_persons(
+        conn: &mut SqliteConnection,
+        stream_id: i64,
+        person_ids: Vec<i64>,
+    ) -> Result<()> {
+        let mut tx = conn.begin().await?;
 
         sqlx::query!(
             "DELETE FROM person_participations WHERE stream_id = ?1",
@@ -278,25 +291,35 @@ impl Database {
         Ok(())
     }
 
-    pub async fn get_userid_by_username(&self, username: &str) -> Result<Option<i64>> {
+    pub async fn get_userid_by_username(
+        conn: &mut SqliteConnection,
+        username: &str,
+    ) -> Result<Option<i64>> {
         let res = sqlx::query!("SELECT id FROM users where username = ?1", username)
             .map(|row| row.id)
-            .fetch_optional(&self.pool)
+            .fetch_optional(conn.borrow_mut())
             .await?;
         Ok(res)
     }
 
-    pub async fn check_password(&self, user_id: i64, password: &str) -> Result<bool> {
+    pub async fn check_password(
+        conn: &mut SqliteConnection,
+        user_id: i64,
+        password: &str,
+    ) -> Result<bool> {
         let db_pass: Option<String> =
             sqlx::query!("SELECT password FROM users WHERE id = ?1", user_id)
                 .map(|row| row.password)
-                .fetch_one(&self.pool)
+                .fetch_one(conn.borrow_mut())
                 .await?;
 
         Ok(db_pass.map(|db_pass| password == db_pass).unwrap_or(true))
     }
 
-    pub async fn get_streams_progress(&self, user_id: i64) -> Result<HashMap<i64, StreamProgress>> {
+    pub async fn get_streams_progress(
+        conn: &mut SqliteConnection,
+        user_id: i64,
+    ) -> Result<HashMap<i64, StreamProgress>> {
         let res: sqlx::Result<HashMap<i64, StreamProgress>> =
             sqlx::query("SELECT stream_id,time,real_time FROM stream_progress WHERE user_id = ?1")
                 .bind(user_id)
@@ -309,20 +332,20 @@ impl Database {
                         },
                     )
                 })
-                .fetch(&self.pool)
+                .fetch(conn.borrow_mut())
                 .try_collect()
                 .await;
         Ok(res?)
     }
 
     pub async fn update_streams_progress(
-        &self,
+        conn: &mut SqliteConnection,
         user_id: i64,
         progress: HashMap<i64, f64>,
     ) -> Result<()> {
         let real_time = Utc::now().timestamp();
 
-        let mut tx = self.pool.begin().await?;
+        let mut tx = conn.begin().await?;
         for (stream_id, time) in progress {
             sqlx::query!(
                 r#"
@@ -363,7 +386,7 @@ impl Database {
     }
 
     pub async fn get_messages(
-        &self,
+        conn: &mut SqliteConnection,
         stream_id: i64,
         start: DateTime<Utc>,
         end: DateTime<Utc>,
@@ -401,31 +424,39 @@ impl Database {
                 time: Utc.timestamp(row.get("time"), 0),
                 real_time: Utc.timestamp(row.get("real_time"), 0),
             })
-            .fetch_all(&self.pool)
+            .fetch_all(conn.borrow_mut())
             .await?;
         Ok(items)
     }
 
-    pub async fn get_ratings(&self, user_id: i64) -> Result<HashMap<i64, i8>> {
+    pub async fn get_ratings(
+        conn: &mut SqliteConnection,
+        user_id: i64,
+    ) -> Result<HashMap<i64, i8>> {
         let map: HashMap<i64, i8> = sqlx::query!(
             "SELECT stream_id,rating FROM stream_ratings WHERE user_id = ?1",
             user_id
         )
         .map(|row| (row.stream_id, row.rating as i8))
-        .fetch(&self.pool)
+        .fetch(conn.borrow_mut())
         .try_collect()
         .await?;
         Ok(map)
     }
 
-    pub async fn set_stream_rating(&self, stream_id: i64, user_id: i64, score: i8) -> Result<()> {
+    pub async fn set_stream_rating(
+        conn: &mut SqliteConnection,
+        stream_id: i64,
+        user_id: i64,
+        score: i8,
+    ) -> Result<()> {
         if score == 0 {
             sqlx::query!(
                 "DELETE FROM stream_ratings WHERE user_id = ?1 AND stream_id = ?2",
                 user_id,
                 stream_id
             )
-            .execute(&self.pool)
+            .execute(conn.borrow_mut())
             .await?;
 
             return Ok(());
@@ -448,19 +479,23 @@ impl Database {
             score,
             real_time
         )
-        .execute(&self.pool)
+        .execute(conn.borrow_mut())
         .await?;
 
         Ok(())
     }
 
-    pub async fn set_custom_stream_title(&self, stream_id: i64, title: String) -> Result<()> {
+    pub async fn set_custom_stream_title(
+        conn: &mut SqliteConnection,
+        stream_id: i64,
+        title: String,
+    ) -> Result<()> {
         if title.is_empty() {
             sqlx::query!(
                 "DELETE FROM custom_stream_titles WHERE stream_id = ?1",
                 stream_id
             )
-            .execute(&self.pool)
+            .execute(conn.borrow_mut())
             .await?;
         } else {
             sqlx::query!(
@@ -475,14 +510,17 @@ impl Database {
                 stream_id,
                 title
             )
-            .execute(&self.pool)
+            .execute(conn.borrow_mut())
             .await?;
         }
 
         Ok(())
     }
 
-    pub async fn get_hype_datapoints(&self, stream_id: i64) -> Result<Vec<HypeDatapoint>> {
+    pub async fn get_hype_datapoints(
+        conn: &mut SqliteConnection,
+        stream_id: i64,
+    ) -> Result<Vec<HypeDatapoint>> {
         let res = sqlx::query(
             "SELECT ts,loudness,messages FROM stream_hype_datapoints_sad WHERE stream_id = ?",
         )
@@ -501,18 +539,18 @@ impl Database {
                     + messages.map(|m| (m as f64) / 5.0).unwrap_or(0.0)
             },
         })
-        .fetch_all(&self.pool)
+        .fetch_all(conn.borrow_mut())
         .await?;
 
         Ok(res)
     }
 
     pub async fn set_stream_decibels(
-        &self,
+        conn: &mut SqliteConnection,
         stream_id: i64,
         datapoints: Vec<(i64, f64)>,
     ) -> Result<()> {
-        let mut tx = self.pool.begin().await?;
+        let mut tx = conn.begin().await?;
 
         sqlx::query!(
             "DELETE FROM stream_decibels WHERE stream_id = ?1",
@@ -537,11 +575,11 @@ impl Database {
     }
 
     pub async fn set_stream_loudness(
-        &self,
+        conn: &mut SqliteConnection,
         stream_id: i64,
         datapoints: Vec<LoudnessDatapoint>,
     ) -> Result<()> {
-        let mut tx = self.pool.begin().await?;
+        let mut tx = conn.begin().await?;
 
         sqlx::query!(
             "DELETE FROM stream_loudness WHERE stream_id = ?1",
@@ -571,14 +609,14 @@ impl Database {
     }
 
     pub async fn set_stream_chatspeed_datapoints<I>(
-        &self,
+        conn: &mut SqliteConnection,
         stream_id: i64,
         datapoints: I,
     ) -> Result<()>
     where
         I: IntoIterator<Item = (DateTime<Utc>, i64)>,
     {
-        let mut tx = self.pool.begin().await?;
+        let mut tx = conn.begin().await?;
 
         sqlx::query!(
             "DELETE FROM stream_chatspeed_datapoints WHERE stream_id = ?1",
@@ -604,7 +642,10 @@ impl Database {
         Ok(())
     }
 
-    pub async fn get_clips(&self, stream_id: Option<i64>) -> Result<Vec<Clip>> {
+    pub async fn get_clips(
+        conn: &mut SqliteConnection,
+        stream_id: Option<i64>,
+    ) -> Result<Vec<Clip>> {
         let mut sql = String::from(
             r#"
                 SELECT
@@ -636,13 +677,13 @@ impl Database {
                 created_at: row.get("created_at"),
                 view_count: row.get("view_count"),
             })
-            .fetch_all(&self.pool)
+            .fetch_all(conn.borrow_mut())
             .await?;
         Ok(items)
     }
 
     pub async fn create_clip(
-        &self,
+        conn: &mut SqliteConnection,
         author_id: i64,
         clip_request: CreateClipRequest,
     ) -> Result<Clip> {
@@ -662,7 +703,7 @@ impl Database {
             clip_request.title,
             created_at,
         )
-        .execute(&self.pool)
+        .execute(conn.borrow_mut())
         .await?;
 
         Ok(Clip {
@@ -679,7 +720,7 @@ impl Database {
     }
 
     pub async fn update_clip(
-        &self,
+        conn: &mut SqliteConnection,
         author_id: i64,
         clip_id: i64,
         clip_request: CreateClipRequest,
@@ -700,16 +741,20 @@ impl Database {
             clip_id,
             author_id,
         )
-        .execute(&self.pool)
+        .execute(conn.borrow_mut())
         .await?;
 
         Ok(res.rows_affected() > 0)
     }
 
-    pub async fn add_clip_view(&self, clip_id: i64, user_id: Option<i64>) -> Result<()> {
+    pub async fn add_clip_view(
+        conn: &mut SqliteConnection,
+        clip_id: i64,
+        user_id: Option<i64>,
+    ) -> Result<()> {
         let timestamp = Utc::now().timestamp();
 
-        let res = sqlx::query!(
+        sqlx::query!(
             r#"
             INSERT INTO clip_views
                 (clip_id, user_id, real_time)
@@ -720,7 +765,7 @@ impl Database {
             user_id,
             timestamp,
         )
-        .execute(&self.pool)
+        .execute(conn.borrow_mut())
         .await?;
 
         Ok(())

@@ -1,3 +1,4 @@
+use std::borrow::BorrowMut;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
@@ -7,9 +8,12 @@ use crate::create_preview::{
     create_clip_preview, create_clip_thumbnail, create_preview, create_thumbnails,
     get_sections_from_file,
 };
+use crate::db::Database;
 use crate::loudness::get_loudness_points;
+use crate::util::get_conn;
 use crate::{okky, DB, STREAMS_DIR};
 
+use sqlx::SqliteConnection;
 use streamwatch_shared::types::{Clip, StreamInfo, StreamJson};
 
 use tokio::sync::{self, mpsc};
@@ -18,21 +22,29 @@ use once_cell::sync::OnceCell;
 
 use anyhow::{anyhow, Result};
 
-async fn expect_stream(stream_id: i64) -> Result<StreamJson> {
-    let db = DB.get().unwrap();
-    match db.get_stream_by_id(stream_id).await? {
+async fn expect_stream(conn: &mut SqliteConnection, stream_id: i64) -> Result<StreamJson> {
+    match Database::get_stream_by_id(conn, stream_id).await? {
         None => Err(anyhow!("stream {} not found", stream_id)),
         Some(s) => Ok(s),
     }
 }
 
-async fn expect_clip(clip_id: i64) -> Result<Clip> {
-    let db = DB.get().unwrap();
-    let clips = db.get_clips(None).await?;
+async fn expect_clip(conn: &mut SqliteConnection, clip_id: i64) -> Result<Clip> {
+    let clips = Database::get_clips(conn, None).await?;
     match clips.into_iter().find(|c| c.id == clip_id) {
         None => Err(anyhow!("clip {} not found", clip_id)),
         Some(s) => Ok(s),
     }
+}
+
+async fn expect_clip_stream(clip_id: i64) -> Result<(Clip, StreamJson)> {
+    let db = DB.get().unwrap();
+    let mut conn = db.pool.acquire().await?;
+
+    let clip = expect_clip(&mut conn, clip_id).await?;
+    let stream = expect_stream(&mut conn, clip.stream_id).await?;
+
+    Ok((clip, stream))
 }
 
 pub static SENDER: OnceCell<JobSender> = OnceCell::new();
@@ -122,8 +134,7 @@ async fn make_preview(stream_id: i64, path: PathBuf) -> Result<()> {
 }
 
 async fn make_clip_preview(clip_id: i64) -> Result<()> {
-    let clip = expect_clip(clip_id).await?;
-    let stream = expect_stream(clip.stream_id).await?;
+    let (clip, stream) = expect_clip_stream(clip_id).await?;
 
     let start = Instant::now();
 
@@ -142,7 +153,7 @@ async fn make_clip_preview(clip_id: i64) -> Result<()> {
         "UPDATE streams SET preview_count = 1 WHERE id = ?1",
         stream_id,
     )
-    .execute(&db.pool)
+    .execute(&Database::pool)
     .await?;
     */
 
@@ -182,8 +193,8 @@ async fn make_thumbnails(stream_id: i64, path: PathBuf) -> Result<()> {
 }
 
 async fn make_clip_thumbnail(clip_id: i64) -> Result<()> {
-    let clip = expect_clip(clip_id).await?;
-    let stream = expect_stream(clip.stream_id).await?;
+    let (clip, stream) = expect_clip_stream(clip_id).await?;
+
     let start = Instant::now();
 
     let thumbnail_path = Clip::thumbnail_path(clip_id);
@@ -202,7 +213,7 @@ async fn make_clip_thumbnail(clip_id: i64) -> Result<()> {
         thumbnail_count,
         stream_id,
     )
-    .execute(&db.pool)
+    .execute(&Database::pool)
     .await?;
     */
 
@@ -212,19 +223,15 @@ async fn make_clip_thumbnail(clip_id: i64) -> Result<()> {
 }
 
 async fn update_loudness(stream_id: i64) -> Result<()> {
-    let db = DB.get().unwrap();
-
-    let stream = expect_stream(stream_id).await?;
+    let stream = expect_stream(get_conn().await?.borrow_mut(), stream_id).await?;
     let loudness = get_loudness_points(&stream.info).await?;
-    db.set_stream_loudness(stream_id, loudness).await?;
+    Database::set_stream_loudness(get_conn().await?.borrow_mut(), stream_id, loudness).await?;
 
     Ok(())
 }
 
 async fn update_chatspeed(stream_id: i64) -> Result<()> {
-    let db = DB.get().unwrap();
-
-    let stream = expect_stream(stream_id).await?;
+    let stream = expect_stream(get_conn().await?.borrow_mut(), stream_id).await?;
     if !stream.info.has_chat {
         return Ok(());
     }
@@ -233,7 +240,7 @@ async fn update_chatspeed(stream_id: i64) -> Result<()> {
         .await?
         .into_iter()
         .map(|(ts, cnt)| (ts, cnt as i64));
-    db.set_stream_chatspeed_datapoints(stream_id, chatspeed)
+    Database::set_stream_chatspeed_datapoints(get_conn().await?.borrow_mut(), stream_id, chatspeed)
         .await?;
 
     Ok(())

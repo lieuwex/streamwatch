@@ -1,9 +1,10 @@
 use crate::chat::handle_chat_request;
+use crate::db::Database;
 use crate::job_handler::{Job, SENDER};
 use crate::scan::scan_streams;
 use crate::util::AnyhowError;
 use crate::watchparty::{get_watch_parties, watch_party_ws};
-use crate::{check, DB, STREAMS_DIR};
+use crate::{check, conn, DB, STREAMS_DIR};
 
 use streamwatch_shared::types::{ConversionProgress, CreateClipRequest, GameItem, StreamJson};
 
@@ -34,14 +35,12 @@ pub struct PasswordQuery {
 }
 
 async fn streams() -> Result<warp::reply::Json, warp::Rejection> {
-    let db = DB.get().unwrap();
-    let streams: Vec<StreamJson> = check!(db.get_streams().await);
+    let streams: Vec<StreamJson> = check!(Database::get_streams(conn!()).await);
     Ok(warp::reply::json(&streams))
 }
 
 async fn processing_streams() -> Result<warp::reply::Json, warp::Rejection> {
-    let db = DB.get().unwrap();
-    let streams: Vec<ConversionProgress> = check!(db.get_processing_streams().await);
+    let streams: Vec<ConversionProgress> = check!(Database::get_processing_streams(conn!()).await);
     Ok(warp::reply::json(&streams))
 }
 
@@ -49,11 +48,7 @@ async fn replace_games(
     stream_id: i64,
     items: Vec<GameItem>,
 ) -> Result<warp::reply::Response, warp::Rejection> {
-    let db = DB.get().unwrap();
-
-    let mut conn = check!(db.pool.acquire().await);
-    check!(db.replace_games(&mut conn, stream_id, items).await);
-
+    check!(Database::replace_games(conn!(), stream_id, items).await);
     Ok(warp::reply().into_response())
 }
 
@@ -61,21 +56,17 @@ async fn replace_persons(
     stream_id: i64,
     person_ids: Vec<i64>,
 ) -> Result<warp::reply::Response, warp::Rejection> {
-    let db = DB.get().unwrap();
-    check!(db.replace_persons(stream_id, person_ids).await);
-
+    check!(Database::replace_persons(conn!(), stream_id, person_ids).await);
     Ok(warp::reply().into_response())
 }
 
 async fn get_stream_hype(stream_id: i64) -> Result<warp::reply::Json, warp::Rejection> {
-    let db = DB.get().unwrap();
-    let datapoints = check!(db.get_hype_datapoints(stream_id).await);
+    let datapoints = check!(Database::get_hype_datapoints(conn!(), stream_id).await);
     Ok(warp::reply::json(&datapoints))
 }
 
 async fn get_stream_clips(stream_id: i64) -> Result<warp::reply::Json, warp::Rejection> {
-    let db = DB.get().unwrap();
-    let clips = check!(db.get_clips(Some(stream_id)).await);
+    let clips = check!(Database::get_clips(conn!(), Some(stream_id)).await);
     Ok(warp::reply::json(&clips))
 }
 
@@ -83,17 +74,15 @@ async fn get_stream_ratings(
     username: String,
     password: PasswordQuery,
 ) -> Result<warp::reply::Response, warp::Rejection> {
-    let db = DB.get().unwrap();
-
-    let user_id = match check!(db.get_userid_by_username(&username).await) {
+    let user_id = match check!(Database::get_userid_by_username(conn!(), &username).await) {
         None => return Ok(reply_status!(StatusCode::UNAUTHORIZED)),
         Some(id) => id,
     };
-    if !check!(db.check_password(user_id, &password.password).await) {
+    if !check!(Database::check_password(conn!(), user_id, &password.password).await) {
         return Ok(reply_status!(StatusCode::UNAUTHORIZED));
     }
 
-    let map = check!(db.get_ratings(user_id).await);
+    let map = check!(Database::get_ratings(conn!(), user_id).await);
 
     Ok(reply_status!(warp::reply::json(&map), StatusCode::FOUND))
 }
@@ -112,17 +101,15 @@ async fn rate_stream(
         return Ok(reply_status!(StatusCode::BAD_REQUEST));
     }
 
-    let db = DB.get().unwrap();
-
-    let user_id = match check!(db.get_userid_by_username(&username).await) {
+    let user_id = match check!(Database::get_userid_by_username(conn!(), &username).await) {
         None => return Ok(reply_status!(StatusCode::UNAUTHORIZED)),
         Some(id) => id,
     };
-    if !check!(db.check_password(user_id, &password.password).await) {
+    if !check!(Database::check_password(conn!(), user_id, &password.password).await) {
         return Ok(reply_status!(StatusCode::UNAUTHORIZED));
     }
 
-    check!(db.set_stream_rating(stream_id, user_id, score).await);
+    check!(Database::set_stream_rating(conn!(), stream_id, user_id, score).await);
 
     Ok(warp::reply().into_response())
 }
@@ -131,8 +118,7 @@ async fn set_custom_title(
     stream_id: i64,
     title: String,
 ) -> Result<warp::reply::Response, warp::Rejection> {
-    let db = DB.get().unwrap();
-    check!(db.set_custom_stream_title(stream_id, title).await);
+    check!(Database::set_custom_stream_title(conn!(), stream_id, title).await);
     Ok(warp::reply().into_response())
 }
 
@@ -140,17 +126,15 @@ async fn get_streams_progress(
     username: String,
     password: PasswordQuery,
 ) -> Result<warp::reply::Response, warp::Rejection> {
-    let db = DB.get().unwrap();
-
-    let user_id = match check!(db.get_userid_by_username(&username).await) {
+    let user_id = match check!(Database::get_userid_by_username(conn!(), &username).await) {
         None => return Ok(reply_status!(StatusCode::UNAUTHORIZED)),
         Some(id) => id,
     };
-    if !check!(db.check_password(user_id, &password.password).await) {
+    if !check!(Database::check_password(conn!(), user_id, &password.password).await) {
         return Ok(reply_status!(StatusCode::UNAUTHORIZED));
     }
 
-    let map = check!(db.get_streams_progress(user_id).await);
+    let map = check!(Database::get_streams_progress(conn!(), user_id).await);
 
     Ok(reply_status!(warp::reply::json(&map), StatusCode::FOUND))
 }
@@ -159,41 +143,35 @@ async fn set_streams_progress(
     password: PasswordQuery,
     progress: HashMap<i64, f64>,
 ) -> Result<warp::reply::Response, warp::Rejection> {
-    let db = DB.get().unwrap();
-
-    let user_id = match check!(db.get_userid_by_username(&username).await) {
+    let user_id = match check!(Database::get_userid_by_username(conn!(), &username).await) {
         None => return Ok(reply_status!(StatusCode::UNAUTHORIZED)),
         Some(id) => id,
     };
-    if !check!(db.check_password(user_id, &password.password).await) {
+    if !check!(Database::check_password(conn!(), user_id, &password.password).await) {
         return Ok(reply_status!(StatusCode::UNAUTHORIZED));
     }
 
-    check!(db.update_streams_progress(user_id, progress).await);
+    check!(Database::update_streams_progress(conn!(), user_id, progress).await);
 
     Ok(warp::reply().into_response())
 }
 
 async fn get_possible_games() -> Result<warp::reply::Json, warp::Rejection> {
-    let db = DB.get().unwrap();
-    let possible_games = check!(db.get_possible_games().await);
-
+    let possible_games = check!(Database::get_possible_games(conn!()).await);
     Ok(warp::reply::json(&possible_games))
 }
 
 async fn add_possible_game(
     info: HashMap<String, String>,
 ) -> Result<warp::reply::Json, warp::Rejection> {
-    let db = DB.get().unwrap();
-
     let game_info = {
         let name = check!(info.get("name").ok_or_else(|| anyhow!("name required")));
         let twitch_name = info.get("twitchName");
         let platform = info.get("platform");
 
         check!(
-            db.insert_possible_game(
-                &db.pool,
+            Database::insert_possible_game(
+                conn!(),
                 name.to_owned(),
                 twitch_name.cloned(),
                 platform.cloned()
@@ -206,9 +184,7 @@ async fn add_possible_game(
 }
 
 async fn get_possible_persons() -> Result<warp::reply::Json, warp::Rejection> {
-    let db = DB.get().unwrap();
-    let possible_persons = check!(db.get_possible_persons().await);
-
+    let possible_persons = check!(Database::get_possible_persons(conn!()).await);
     Ok(warp::reply::json(&possible_persons))
 }
 
@@ -218,8 +194,7 @@ async fn rescan_streams() -> Result<impl warp::Reply, warp::Rejection> {
 }
 
 async fn get_all_clips() -> Result<warp::reply::Json, warp::Rejection> {
-    let db = DB.get().unwrap();
-    let clips = check!(db.get_clips(None).await);
+    let clips = check!(Database::get_clips(conn!(), None).await);
     Ok(warp::reply::json(&clips))
 }
 
@@ -232,24 +207,24 @@ async fn add_clip_view(
     clip_id: i64,
     params: ClipViewParams,
 ) -> Result<impl warp::Reply, warp::Rejection> {
-    let db = DB.get().unwrap();
-
     let user_id: Option<i64> = match params.username.as_str() {
         "" => None,
-        username => match check!(db.get_userid_by_username(username).await) {
+        username => match check!(Database::get_userid_by_username(conn!(), username).await) {
             None => return Err(warp::reject()),
             Some(id) => Some(id),
         },
     };
     let password_match = match user_id {
         None => true,
-        Some(user_id) => check!(db.check_password(user_id, &params.password).await),
+        Some(user_id) => {
+            check!(Database::check_password(conn!(), user_id, &params.password).await)
+        }
     };
     if !password_match {
         return Err(warp::reject());
     }
 
-    check!(db.add_clip_view(clip_id, user_id).await);
+    check!(Database::add_clip_view(conn!(), clip_id, user_id).await);
 
     Ok(warp::reply::with_status(warp::reply(), StatusCode::CREATED))
 }
@@ -258,21 +233,18 @@ async fn create_clip(
     password: PasswordQuery,
     clip_request: CreateClipRequest,
 ) -> Result<warp::reply::Json, warp::Rejection> {
-    let db = DB.get().unwrap();
-
     let n: Option<String> = None; // HACK
     let user_id = match check!(
-        db.get_userid_by_username(&clip_request.author_username)
-            .await
+        Database::get_userid_by_username(conn!(), &clip_request.author_username).await
     ) {
         None => return Ok(warp::reply::json(&n)),
         Some(id) => id,
     };
-    if !check!(db.check_password(user_id, &password.password).await) {
+    if !check!(Database::check_password(conn!(), user_id, &password.password).await) {
         return Ok(warp::reply::json(&n));
     }
 
-    let clip = check!(db.create_clip(user_id, clip_request).await);
+    let clip = check!(Database::create_clip(conn!(), user_id, clip_request).await);
 
     {
         let sender = SENDER.get().unwrap();
@@ -290,21 +262,18 @@ async fn update_clip(
     password: PasswordQuery,
     clip_request: CreateClipRequest,
 ) -> Result<warp::reply::Json, warp::Rejection> {
-    let db = DB.get().unwrap();
-
     let n: Option<String> = None; // HACK
     let user_id = match check!(
-        db.get_userid_by_username(&clip_request.author_username)
-            .await
+        Database::get_userid_by_username(conn!(), &clip_request.author_username).await
     ) {
         None => return Ok(warp::reply::json(&n)),
         Some(id) => id,
     };
-    if !check!(db.check_password(user_id, &password.password).await) {
+    if !check!(Database::check_password(conn!(), user_id, &password.password).await) {
         return Ok(warp::reply::json(&n));
     }
 
-    let updated = check!(db.update_clip(user_id, clip_id, clip_request).await);
+    let updated = check!(Database::update_clip(conn!(), user_id, clip_id, clip_request).await);
     if updated {
         Ok(warp::reply::json(&n))
     } else {

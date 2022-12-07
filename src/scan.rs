@@ -1,4 +1,6 @@
+use crate::db::Database;
 use crate::job_handler::{Job, SENDER};
+use crate::util::get_conn;
 use crate::{DB, STREAMS_DIR};
 
 use streamwatch_shared::functions::{
@@ -8,6 +10,7 @@ use streamwatch_shared::types::{
     GameFeature, GameInfo, GameItem, StreamDatapoint, StreamFileName, StreamInfo,
 };
 
+use std::borrow::BorrowMut;
 use std::collections::HashMap;
 use std::ops::DerefMut;
 use std::path::Path;
@@ -157,15 +160,14 @@ async fn handle_new_stream(
                 let game = match game {
                     Some(g) => g.clone(),
                     None => {
-                        let game = db
-                            .insert_possible_game(
-                                state.tx.deref_mut(),
-                                datapoint.game.clone(),
-                                Some(datapoint.game),
-                                None,
-                            )
-                            .await
-                            .unwrap();
+                        let game = Database::insert_possible_game(
+                            state.tx.deref_mut(),
+                            datapoint.game.clone(),
+                            Some(datapoint.game),
+                            None,
+                        )
+                        .await
+                        .unwrap();
                         state.possible_games.push(game.clone());
                         game
                     }
@@ -185,7 +187,7 @@ async fn handle_new_stream(
             id: g.info.id,
             start_time: g.start_time,
         });
-    db.replace_games(&mut tx, stream_id, games).await?;
+    Database::replace_games(&mut tx, stream_id, games).await?;
 
     tx.commit().await?;
 
@@ -222,11 +224,12 @@ async fn handle_modified_stream(path: &Path, file_name: String, file_size: i64) 
         }
     };
 
-    let stream_id = db.get_stream_id_by_filename(&file_name).await.unwrap();
-    let duration = duration_to_seconds_float(&duration);
-
-    {
+    let stream_id = {
         let mut tx = db.pool.begin().await?;
+        let stream_id = Database::get_stream_id_by_filename(&mut tx, &file_name)
+            .await
+            .unwrap();
+        let duration = duration_to_seconds_float(&duration);
 
         // update filesize
         sqlx::query!(
@@ -242,7 +245,9 @@ async fn handle_modified_stream(path: &Path, file_name: String, file_size: i64) 
         remove_thumbnails_and_preview(&mut tx, stream_id).await?;
 
         tx.commit().await?;
-    }
+
+        stream_id
+    };
 
     sender.send(Job::Thumbnails {
         stream_id,
@@ -270,7 +275,7 @@ pub async fn scan_streams() -> Result<()> {
 
     let file_name_states = {
         let db_map: HashMap<String, u64> = {
-            db.get_streams()
+            Database::get_streams(get_conn().await?.borrow_mut())
                 .await?
                 .into_iter()
                 .map(|stream| (stream.info.file_name.into(), stream.info.file_size))
@@ -326,7 +331,7 @@ pub async fn scan_streams() -> Result<()> {
         m
     };
 
-    let mut possible_games = db.get_possible_games().await?;
+    let mut possible_games = Database::get_possible_games(get_conn().await?.borrow_mut()).await?;
 
     let mut all_unchanged = true;
     for (file_name, (file_size, state)) in file_name_states {
@@ -349,9 +354,12 @@ pub async fn scan_streams() -> Result<()> {
                 println!("got removed item: {}", file_name);
                 all_unchanged = false;
 
-                let stream_id = db.get_stream_id_by_filename(&file_name).await.unwrap();
-                remove_thumbnails_and_preview(&db.pool, stream_id).await?;
-                db.remove_stream(stream_id).await?;
+                let mut tx = db.pool.begin().await?;
+                let stream_id = Database::get_stream_id_by_filename(&mut tx, &file_name)
+                    .await
+                    .unwrap();
+                remove_thumbnails_and_preview(&mut tx, stream_id).await?;
+                Database::remove_stream(&mut tx, stream_id).await?;
             }
         }
     }
