@@ -66,7 +66,7 @@ impl StreamFileName {
     }
 
     pub fn chat_file_path(&self, streams_dir: &str) -> PathBuf {
-        let mut res = Path::new(streams_dir).join(&self.0);
+        let mut res = self.stream_path(streams_dir);
         res.set_extension("txt.zst");
         res
     }
@@ -86,7 +86,7 @@ impl StreamFileName {
     }
 
     fn extra_info_file_path(&self, streams_dir: &str) -> PathBuf {
-        let mut res = Path::new(streams_dir).join(&self.0);
+        let mut res = self.stream_path(streams_dir);
         res.set_extension("yaml");
         res
     }
