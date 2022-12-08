@@ -18,8 +18,7 @@ use std::path::Path;
 use tokio::fs::{read_dir, remove_dir_all, remove_file};
 use tokio_stream::wrappers::ReadDirStream;
 
-use futures::stream::iter;
-use futures::StreamExt;
+use futures::stream::{iter, StreamExt, TryStreamExt};
 
 use chrono::{Duration, TimeZone, Utc};
 
@@ -134,7 +133,8 @@ async fn handle_new_stream(
 
     let games = iter(datapoints)
         .filter(|datapoint| std::future::ready(!datapoint.game.is_empty()))
-        .fold(
+        .map(|dp| anyhow::Ok(dp))
+        .try_fold(
             FoldState {
                 games: vec![],
                 possible_games,
@@ -147,7 +147,7 @@ async fn handle_new_stream(
                     .map(|g| g.info.twitch_name.as_ref().unwrap() == &datapoint.game)
                     .unwrap_or(false);
                 if last_item_same_game {
-                    return state;
+                    return Ok(state);
                 }
 
                 let game = state.possible_games.iter().find(|g| {
@@ -166,8 +166,7 @@ async fn handle_new_stream(
                             Some(datapoint.game),
                             None,
                         )
-                        .await
-                        .unwrap();
+                        .await?;
                         state.possible_games.push(game.clone());
                         game
                     }
@@ -177,10 +176,10 @@ async fn handle_new_stream(
                 let game = GameFeature::from_game_info(game, start_time);
                 state.games.push(game);
 
-                state
+                Ok(state)
             },
         )
-        .await
+        .await?
         .games
         .into_iter()
         .map(|g| GameItem {
