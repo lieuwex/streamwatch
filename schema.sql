@@ -87,6 +87,25 @@ CREATE TABLE game_features (
 	FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE
 );
 
+CREATE TABLE trims (
+	stream_id INTEGER NOT NULL,
+
+	old_filename TEXT NOT NULL,
+	new_filename TEXT NOT NULL,
+	old_ts INTEGER NOT NULL,
+	new_ts INTEGER NOT NULL,
+
+	start_time INTEGER NOT NULL, -- in seconds
+
+	game_features_rows_affected INTEGER NOT NULL,
+	stream_progress_rows_affected INTEGER NOT NULL,
+	stream_progress_updates_rows_affected INTEGER NOT NULL,
+	clips_rows_affected INTEGER NOT NULL,
+
+	real_time INTEGER NOT NULL,
+	time_taken_millis INTEGER
+);
+
 CREATE TABLE meta (
 	key TEXT NOT NULL PRIMARY KEY,
 	value TEXT
