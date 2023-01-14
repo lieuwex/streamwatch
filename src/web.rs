@@ -409,6 +409,33 @@ async fn add_twitch_progress(
     Ok(warp::reply::with_status(warp::reply(), StatusCode::CREATED))
 }
 
+#[derive(Clone, Debug, Deserialize)]
+struct WebErrorRequest {
+    user_agent: String,
+    message: Option<String>,
+    filename: Option<String>,
+    lineno: Option<i64>,
+    colno: Option<i64>,
+    error: Box<RawValue>,
+}
+async fn add_web_error(request: WebErrorRequest) -> Result<impl warp::Reply, warp::Rejection> {
+    let ts = Utc::now().timestamp();
+    let error = check!(serde_json::to_string(&request.error));
+
+    check!(sqlx::query!(
+        "INSERT INTO web_errors(user_agent, message, filename, lineno, colno, error, ts) values(?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        request.user_agent,
+        request.message,
+        request.filename,
+        request.lineno,
+        request.colno,
+        error,
+        ts,
+    ).execute(conn!().deref_mut()).await);
+
+    Ok(warp::reply::reply())
+}
+
 async fn check_login(
     username: String,
     password: PasswordQuery,
@@ -530,7 +557,11 @@ pub async fn run_server() {
                 .or(warp::post()
                     .and(warp::path!("clips" / i64 / "view"))
                     .and(warp::query())
-                    .and_then(add_clip_view)),
+                    .and_then(add_clip_view))
+                .or(warp::post()
+                    .and(warp::path!("web_error"))
+                    .and(warp::body::json())
+                    .and_then(add_web_error)),
         );
         let static_paths = warp::path("video")
             .and(warp::fs::file("./build/index.html"))
