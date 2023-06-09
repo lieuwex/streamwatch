@@ -142,8 +142,8 @@ async fn make_clip_preview(clip_id: i64) -> Result<()> {
     create_clip_preview(
         &stream.info.file_name.stream_path(STREAMS_DIR),
         &preview_path,
-        clip.start_time,
-        clip.duration,
+        clip.start_time as f64 / 1e3,
+        clip.duration as f64 / 1e3,
     )
     .await?;
 
@@ -201,7 +201,7 @@ async fn make_clip_thumbnail(clip_id: i64) -> Result<()> {
     create_clip_thumbnail(
         &stream.info.file_name.stream_path(STREAMS_DIR),
         &thumbnail_path,
-        clip.start_time,
+        clip.start_time as f64 / 1e3,
     )
     .await?;
 

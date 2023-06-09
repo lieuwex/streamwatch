@@ -91,7 +91,7 @@ pub async fn create_thumbnails(
 }
 
 /// Creates webp thumbnail for a clip
-pub async fn create_clip_thumbnail(path: &Path, output: &Path, begin: i64) -> io::Result<()> {
+pub async fn create_clip_thumbnail(path: &Path, output: &Path, begin: f64) -> io::Result<()> {
     create_dir_all(output.ancestors().nth(1).unwrap()).await?;
 
     let mut handle = Command::new("ffmpeg")
@@ -216,8 +216,8 @@ pub async fn create_preview(path: &Path, output: &Path, sections: &[(i32, i32)])
 pub async fn create_clip_preview(
     path: &Path,
     output: &Path,
-    begin: i64,
-    duration: i64,
+    begin: f64,
+    duration: f64,
 ) -> io::Result<()> {
     create_dir_all(output.ancestors().nth(1).unwrap()).await?;
 
