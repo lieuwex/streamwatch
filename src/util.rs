@@ -80,6 +80,13 @@ macro_rules! check {
 }
 
 #[macro_export]
+macro_rules! get_conn {
+    () => {
+        check!(DB.get().unwrap().pool.acquire().await)
+    };
+}
+
+#[macro_export]
 macro_rules! conn {
     () => {{
         use std::borrow::BorrowMut;
