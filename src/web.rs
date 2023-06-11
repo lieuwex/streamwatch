@@ -289,6 +289,12 @@ async fn update_clip(
 
     let updated = check!(Database::update_clip(&mut conn, user_id, clip_id, clip_request).await);
     if updated {
+        {
+            let sender = SENDER.get().unwrap();
+            sender.send(Job::ClipPreview { clip_id }).unwrap();
+            sender.send(Job::ClipThumbnail { clip_id }).unwrap();
+        }
+
         Ok(warp::reply::json(&n))
     } else {
         Err(warp::reject()) // TODO
