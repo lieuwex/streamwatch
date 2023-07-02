@@ -29,6 +29,21 @@ macro_rules! reply_status {
     };
 }
 
+macro_rules! check_username_password {
+    ($conn:expr, $username:expr, $password:expr, $on_err:expr) => {{
+        let user_id = match check!(Database::get_userid_by_username($conn, $username).await) {
+            None => return $on_err,
+            Some(id) => id,
+        };
+
+        if !check!(Database::check_password($conn, user_id, &$password.password).await) {
+            return $on_err;
+        }
+
+        user_id
+    }};
+}
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct PasswordQuery {
     password: String,
@@ -76,13 +91,12 @@ async fn get_stream_ratings(
 ) -> Result<warp::reply::Response, warp::Rejection> {
     let mut conn = get_conn!();
 
-    let user_id = match check!(Database::get_userid_by_username(&mut conn, &username).await) {
-        None => return Ok(reply_status!(StatusCode::UNAUTHORIZED)),
-        Some(id) => id,
-    };
-    if !check!(Database::check_password(&mut conn, user_id, &password.password).await) {
-        return Ok(reply_status!(StatusCode::UNAUTHORIZED));
-    }
+    let user_id = check_username_password!(
+        &mut conn,
+        &username,
+        password,
+        Ok(reply_status!(StatusCode::UNAUTHORIZED))
+    );
 
     let map = check!(Database::get_ratings(&mut conn, user_id).await);
 
@@ -105,13 +119,12 @@ async fn rate_stream(
 
     let mut conn = get_conn!();
 
-    let user_id = match check!(Database::get_userid_by_username(&mut conn, &username).await) {
-        None => return Ok(reply_status!(StatusCode::UNAUTHORIZED)),
-        Some(id) => id,
-    };
-    if !check!(Database::check_password(&mut conn, user_id, &password.password).await) {
-        return Ok(reply_status!(StatusCode::UNAUTHORIZED));
-    }
+    let user_id = check_username_password!(
+        &mut conn,
+        &username,
+        password,
+        Ok(reply_status!(StatusCode::UNAUTHORIZED))
+    );
 
     check!(Database::set_stream_rating(&mut conn, stream_id, user_id, score).await);
 
@@ -132,13 +145,12 @@ async fn get_streams_progress(
 ) -> Result<warp::reply::Response, warp::Rejection> {
     let mut conn = get_conn!();
 
-    let user_id = match check!(Database::get_userid_by_username(&mut conn, &username).await) {
-        None => return Ok(reply_status!(StatusCode::UNAUTHORIZED)),
-        Some(id) => id,
-    };
-    if !check!(Database::check_password(&mut conn, user_id, &password.password).await) {
-        return Ok(reply_status!(StatusCode::UNAUTHORIZED));
-    }
+    let user_id = check_username_password!(
+        &mut conn,
+        &username,
+        password,
+        Ok(reply_status!(StatusCode::UNAUTHORIZED))
+    );
 
     let map = check!(Database::get_streams_progress(&mut conn, user_id).await);
 
@@ -151,13 +163,12 @@ async fn set_streams_progress(
 ) -> Result<warp::reply::Response, warp::Rejection> {
     let mut conn = get_conn!();
 
-    let user_id = match check!(Database::get_userid_by_username(&mut conn, &username).await) {
-        None => return Ok(reply_status!(StatusCode::UNAUTHORIZED)),
-        Some(id) => id,
-    };
-    if !check!(Database::check_password(&mut conn, user_id, &password.password).await) {
-        return Ok(reply_status!(StatusCode::UNAUTHORIZED));
-    }
+    let user_id = check_username_password!(
+        &mut conn,
+        &username,
+        password,
+        Ok(reply_status!(StatusCode::UNAUTHORIZED))
+    );
 
     check!(Database::update_streams_progress(&mut conn, user_id, progress).await);
 
@@ -246,15 +257,12 @@ async fn create_clip(
     let mut conn = get_conn!();
 
     let n: Option<String> = None; // HACK
-    let user_id = match check!(
-        Database::get_userid_by_username(&mut conn, &clip_request.author_username).await
-    ) {
-        None => return Ok(warp::reply::json(&n)),
-        Some(id) => id,
-    };
-    if !check!(Database::check_password(&mut conn, user_id, &password.password).await) {
-        return Ok(warp::reply::json(&n));
-    }
+    let user_id = check_username_password!(
+        &mut conn,
+        &clip_request.author_username,
+        password,
+        Ok(warp::reply::json(&n))
+    );
 
     let clip = check!(Database::create_clip(&mut conn, user_id, clip_request).await);
 
@@ -277,15 +285,12 @@ async fn update_clip(
     let mut conn = get_conn!();
 
     let n: Option<String> = None; // HACK
-    let user_id = match check!(
-        Database::get_userid_by_username(&mut conn, &clip_request.author_username).await
-    ) {
-        None => return Ok(warp::reply::json(&n)),
-        Some(id) => id,
-    };
-    if !check!(Database::check_password(&mut conn, user_id, &password.password).await) {
-        return Ok(warp::reply::json(&n));
-    }
+    let user_id = check_username_password!(
+        &mut conn,
+        &clip_request.author_username,
+        password,
+        Ok(warp::reply::json(&n))
+    );
 
     let updated = check!(Database::update_clip(&mut conn, user_id, clip_id, clip_request).await);
     if updated {
