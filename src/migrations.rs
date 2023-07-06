@@ -75,7 +75,7 @@ async fn three() -> Result<()> {
             sqlx::query("INSERT INTO stream_jumpcuts(stream_id, at, duration) VALUES(?, ?, ?)")
                 .bind(stream.info.id)
                 .bind(jumpcut.at.timestamp())
-                .bind(jumpcut.duration.num_seconds())
+                .bind(jumpcut.duration.as_secs() as i64)
                 .execute(&mut tx)
                 .await?;
         }

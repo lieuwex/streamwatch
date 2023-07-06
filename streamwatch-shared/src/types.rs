@@ -1,13 +1,14 @@
-use crate::serde::{duration_seconds, duration_seconds_float};
+use crate::serde::{duration_milliseconds, duration_seconds, duration_seconds_float};
 
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use tokio::fs::{metadata, read_to_string};
 
 use chrono::{
     serde::{ts_seconds, ts_seconds_option},
-    DateTime, Duration, Utc,
+    DateTime, Utc,
 };
 
 use serde::{Deserialize, Serialize};
@@ -250,8 +251,10 @@ pub struct HypeDatapoint {
 pub struct CreateClipRequest {
     pub author_username: String,
     pub stream_id: i64,
-    pub start_time: i64, // in milliseconds
-    pub duration: i64,   // in milliseconds
+    #[serde(with = "duration_milliseconds")]
+    pub start_time: Duration,
+    #[serde(with = "duration_milliseconds")]
+    pub duration: Duration,
     pub title: Option<String>,
 }
 #[derive(Clone, Debug, Serialize)]
@@ -260,8 +263,10 @@ pub struct Clip {
     pub author_id: i64,
     pub author_username: String,
     pub stream_id: i64,
-    pub start_time: i64, // in milliseconds
-    pub duration: i64,   // in milliseconds
+    #[serde(with = "duration_milliseconds")]
+    pub start_time: Duration,
+    #[serde(with = "duration_milliseconds")]
+    pub duration: Duration,
     pub title: Option<String>,
     pub created_at: i64,
     pub view_count: i64,

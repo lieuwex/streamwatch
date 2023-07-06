@@ -1,19 +1,18 @@
-use streamwatch_shared::functions::{duration_to_seconds_float, get_video_duration};
+use streamwatch_shared::functions::get_video_duration;
 
 use std::io;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use tokio::fs::create_dir_all;
 use tokio::process::Command;
-
-use chrono::Duration;
 
 use anyhow::Result;
 
 const SECTION_DURATION_SECS: i32 = 1;
 
 fn get_sections(duration: &Duration) -> Vec<(i32, i32)> {
-    let duration = duration_to_seconds_float(duration);
+    let duration = duration.as_secs_f64();
     let count = std::cmp::max((duration / 900.0) as usize, 1);
     (1..=count)
         .map(|i| {
@@ -91,7 +90,7 @@ pub async fn create_thumbnails(
 }
 
 /// Creates webp thumbnail for a clip
-pub async fn create_clip_thumbnail(path: &Path, output: &Path, begin: f64) -> io::Result<()> {
+pub async fn create_clip_thumbnail(path: &Path, output: &Path, begin: Duration) -> io::Result<()> {
     create_dir_all(output.ancestors().nth(1).unwrap()).await?;
 
     let mut handle = Command::new("ffmpeg")
@@ -100,7 +99,7 @@ pub async fn create_clip_thumbnail(path: &Path, output: &Path, begin: f64) -> io
             "-loglevel",
             "error",
             "-ss",
-            &begin.to_string(),
+            &begin.as_secs_f64().to_string(),
             "-i",
         ])
         .arg(path.as_os_str())
@@ -216,8 +215,8 @@ pub async fn create_preview(path: &Path, output: &Path, sections: &[(i32, i32)])
 pub async fn create_clip_preview(
     path: &Path,
     output: &Path,
-    begin: f64,
-    duration: f64,
+    begin: Duration,
+    duration: Duration,
 ) -> io::Result<()> {
     create_dir_all(output.ancestors().nth(1).unwrap()).await?;
 
@@ -227,9 +226,9 @@ pub async fn create_clip_preview(
     cmd.args(&["-n10", "ffmpeg", "-hide_banner", "-loglevel", "error"]);
 
     cmd.arg("-ss");
-    cmd.arg(begin.to_string());
+    cmd.arg(begin.as_secs_f64().to_string());
     cmd.arg("-t");
-    cmd.arg(duration.to_string());
+    cmd.arg(duration.as_secs_f64().to_string());
     cmd.arg("-i");
     cmd.arg(path_string);
 

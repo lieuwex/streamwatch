@@ -1,23 +1,15 @@
 use std::path::Path;
+use std::time::Duration;
 
 use tokio::process::Command;
 
 use once_cell::sync::Lazy;
 
-use chrono::{DateTime, Duration, Local, NaiveDate, NaiveDateTime, TimeZone};
+use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, TimeZone};
 
 use regex::Regex;
 
 use anyhow::Result;
-
-pub fn seconds_float_to_duration(value: f64) -> Duration {
-    let milliseconds = (value * 1e3) as i64;
-    Duration::milliseconds(milliseconds)
-}
-
-pub fn duration_to_seconds_float(duration: &Duration) -> f64 {
-    (duration.num_milliseconds() as f64) / 1e3
-}
 
 pub async fn get_video_duration(path: &Path) -> Result<Duration> {
     let output = Command::new("ffprobe")
@@ -37,7 +29,7 @@ pub async fn get_video_duration(path: &Path) -> Result<Duration> {
 
     let s = String::from_utf8(output.stdout)?;
     let seconds = s.trim().parse::<f64>()?;
-    Ok(seconds_float_to_duration(seconds))
+    Ok(Duration::from_secs_f64(seconds))
 }
 
 pub enum DateType {

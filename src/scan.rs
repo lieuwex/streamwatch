@@ -3,9 +3,7 @@ use crate::job_handler::{Job, SENDER};
 use crate::util::get_conn;
 use crate::{DB, STREAMS_DIR};
 
-use streamwatch_shared::functions::{
-    duration_to_seconds_float, get_video_duration, parse_filename,
-};
+use streamwatch_shared::functions::{get_video_duration, parse_filename};
 use streamwatch_shared::types::{
     GameFeature, GameInfo, GameItem, StreamDatapoint, StreamFileName, StreamInfo,
 };
@@ -14,13 +12,14 @@ use std::borrow::BorrowMut;
 use std::collections::HashMap;
 use std::ops::DerefMut;
 use std::path::Path;
+use std::time::Duration;
 
 use tokio::fs::{read_dir, remove_dir_all, remove_file};
 use tokio_stream::wrappers::ReadDirStream;
 
 use futures::stream::{iter, StreamExt, TryStreamExt};
 
-use chrono::{Duration, TimeZone, Utc};
+use chrono::{TimeZone, Utc};
 
 use anyhow::{bail, Result};
 
@@ -84,7 +83,7 @@ async fn handle_new_stream(
     let mut tx = db.pool.begin().await?;
 
     let stream_id: i64 = {
-        let duration = duration_to_seconds_float(&duration);
+        let duration = duration.as_secs_f64();
         let has_chat = file_name.has_chat(STREAMS_DIR).await?;
         let file_name = file_name.as_str();
         let timestamp = timestamp.timestamp();
@@ -172,7 +171,9 @@ async fn handle_new_stream(
                     }
                 };
 
-                let start_time = (datapoint.timestamp - timestamp).max(Duration::zero());
+                let start_time = (datapoint.timestamp - timestamp)
+                    .to_std()
+                    .unwrap_or(Duration::ZERO);
                 let game = GameFeature::from_game_info(game, start_time);
                 state.games.push(game);
 
@@ -228,7 +229,7 @@ async fn handle_modified_stream(path: &Path, file_name: String, file_size: i64) 
         let stream_id = Database::get_stream_id_by_filename(&mut tx, &file_name)
             .await
             .unwrap();
-        let duration = duration_to_seconds_float(&duration);
+        let duration = duration.as_secs_f64();
 
         // update filesize
         sqlx::query!(

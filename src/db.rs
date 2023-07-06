@@ -1,6 +1,5 @@
 use crate::loudness::LoudnessDatapoint;
 
-use streamwatch_shared::functions::{duration_to_seconds_float, seconds_float_to_duration};
 use streamwatch_shared::types::{
     Clip, ConversionProgress, CreateClipRequest, DbMessage, GameInfo, GameItem, HypeDatapoint,
     PersonInfo, StreamInfo, StreamJson, StreamProgress,
@@ -8,7 +7,7 @@ use streamwatch_shared::types::{
 
 use std::borrow::BorrowMut;
 use std::collections::HashMap;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use sqlx::sqlite::{SqliteConnection, SqlitePool, SqliteRow};
 use sqlx::{Connection, Row};
@@ -49,7 +48,7 @@ impl Database {
                     let inserted_at: Option<i64> = row.get("inserted_at");
                     inserted_at.map(|x| Utc.timestamp(x, 0))
                 },
-                duration: seconds_float_to_duration(row.get("duration")),
+                duration: Duration::from_secs_f64(row.get("duration")),
                 has_preview: {
                     let x: i64 = row.get("preview_count");
                     x > 0
@@ -184,7 +183,7 @@ impl Database {
                 ts: Utc.timestamp(row.ts, 0),
                 datapoint_title: row.datapoint_title,
                 games: row.games,
-                progress: seconds_float_to_duration(f64::from(row.progress)), // HACK: should be f64 directly
+                progress: Duration::from_secs_f64(f64::from(row.progress)), // HACK: should be f64 directly
                 eta: row.eta.map(|x| f64::from(x)), // HACK: should be f64 directly
             })
             .fetch_all(conn.borrow_mut())
@@ -241,7 +240,7 @@ impl Database {
             .await?;
 
         for item in items {
-            let start_time = duration_to_seconds_float(&item.start_time);
+            let start_time = item.start_time.as_secs_f64();
 
             sqlx::query!(
                 "INSERT INTO game_features(stream_id, game_id, start_time) VALUES(?1, ?2, ?3)",
@@ -327,7 +326,7 @@ impl Database {
                     (
                         row.get("stream_id"),
                         StreamProgress {
-                            time: seconds_float_to_duration(row.get("time")),
+                            time: Duration::from_secs_f64(row.get("time")),
                             real_time: Utc.timestamp(row.get("real_time"), 0),
                         },
                     )
@@ -671,8 +670,8 @@ impl Database {
                 author_id: row.get("author_id"),
                 author_username: row.get("username"),
                 stream_id: row.get("stream_id"),
-                start_time: row.get("start_time"),
-                duration: row.get("duration"),
+                start_time: Duration::from_millis(row.get::<i64, _>("start_time") as u64),
+                duration: Duration::from_millis(row.get::<i64, _>("duration") as u64),
                 title: row.get("title"),
                 created_at: row.get("created_at"),
                 view_count: row.get("view_count"),
@@ -688,6 +687,8 @@ impl Database {
         clip_request: CreateClipRequest,
     ) -> Result<Clip> {
         let created_at = Utc::now().timestamp();
+        let start_time = clip_request.start_time.as_millis() as i64;
+        let duration = clip_request.duration.as_millis() as i64;
 
         let res = sqlx::query!(
             r#"
@@ -698,8 +699,8 @@ impl Database {
             "#,
             author_id,
             clip_request.stream_id,
-            clip_request.start_time,
-            clip_request.duration,
+            start_time,
+            duration,
             clip_request.title,
             created_at,
         )
@@ -725,6 +726,9 @@ impl Database {
         clip_id: i64,
         clip_request: CreateClipRequest,
     ) -> Result<bool> {
+        let start_time = clip_request.start_time.as_millis() as i64;
+        let duration = clip_request.duration.as_millis() as i64;
+
         let res = sqlx::query!(
             r#"
             UPDATE clips
@@ -735,8 +739,8 @@ impl Database {
             WHERE
                 id=?4 AND author_id=?5
             "#,
-            clip_request.start_time,
-            clip_request.duration,
+            start_time,
+            duration,
             clip_request.title,
             clip_id,
             author_id,

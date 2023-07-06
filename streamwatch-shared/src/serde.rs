@@ -1,13 +1,13 @@
 pub mod duration_seconds {
-    use chrono::Duration;
     use serde::{de, Deserializer, Serializer};
     use std::fmt;
+    use std::time::Duration;
 
     pub fn serialize<S>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        serializer.serialize_i64(duration.num_seconds())
+        serializer.serialize_u64(duration.as_secs())
     }
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Duration, D::Error>
@@ -29,48 +29,41 @@ pub mod duration_seconds {
             )
         }
 
-        fn visit_i64<E>(self, value: i64) -> Result<Duration, E>
-        where
-            E: de::Error,
-        {
-            Ok(Duration::seconds(value))
-        }
-
         fn visit_u64<E>(self, value: u64) -> Result<Duration, E>
         where
             E: de::Error,
         {
-            i64::try_from(value)
-                .map(|s| Duration::seconds(s))
-                .map_err(|_| E::custom(format!("value out of range for i64: {}", value)))
+            Ok(Duration::from_secs(value))
+        }
+
+        fn visit_i64<E>(self, value: i64) -> Result<Duration, E>
+        where
+            E: de::Error,
+        {
+            u64::try_from(value)
+                .map(|s| Duration::from_secs(s))
+                .map_err(|_| E::custom(format!("value out of range for u64: {}", value)))
         }
 
         fn visit_f64<E>(self, value: f64) -> Result<Duration, E>
         where
             E: de::Error,
         {
-            if value.floor() == value {
-                Ok(Duration::seconds(value as i64))
-            } else {
-                Err(E::custom(format!("value out of range for i64: {}", value)))
-            }
+            Ok(Duration::from_secs_f64(value))
         }
     }
 }
 
 pub mod duration_seconds_float {
-    use chrono::Duration;
     use serde::{de, Deserializer, Serializer};
     use std::fmt;
-
-    use crate::functions::{duration_to_seconds_float, seconds_float_to_duration};
+    use std::time::Duration;
 
     pub fn serialize<S>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let seconds = duration_to_seconds_float(duration);
-        serializer.serialize_f64(seconds)
+        serializer.serialize_f64(duration.as_secs_f64())
     }
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Duration, D::Error>
@@ -88,31 +81,87 @@ pub mod duration_seconds_float {
         fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
             write!(
                 formatter,
-                "a floating point number containing the number of seconds of the duration"
+                "an integer containing the number of seconds of the duration"
             )
-        }
-
-        fn visit_i64<E>(self, value: i64) -> Result<Duration, E>
-        where
-            E: de::Error,
-        {
-            Ok(Duration::seconds(value))
         }
 
         fn visit_u64<E>(self, value: u64) -> Result<Duration, E>
         where
             E: de::Error,
         {
-            i64::try_from(value)
-                .map(|s| Duration::seconds(s))
-                .map_err(|_| E::custom(format!("value out of range for i64: {}", value)))
+            Ok(Duration::from_secs(value))
+        }
+
+        fn visit_i64<E>(self, value: i64) -> Result<Duration, E>
+        where
+            E: de::Error,
+        {
+            u64::try_from(value)
+                .map(|s| Duration::from_secs(s))
+                .map_err(|_| E::custom(format!("value out of range for u64: {}", value)))
         }
 
         fn visit_f64<E>(self, value: f64) -> Result<Duration, E>
         where
             E: de::Error,
         {
-            Ok(seconds_float_to_duration(value))
+            Ok(Duration::from_secs_f64(value))
+        }
+    }
+}
+
+pub mod duration_milliseconds {
+    use serde::{de, Deserializer, Serializer};
+    use std::fmt;
+    use std::time::Duration;
+
+    pub fn serialize<S>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_u128(duration.as_millis())
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Duration, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_i64(DurationVisitor)
+    }
+
+    struct DurationVisitor;
+
+    impl<'de> de::Visitor<'de> for DurationVisitor {
+        type Value = Duration;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            write!(
+                formatter,
+                "an integer containing the number of milliseconds of the duration"
+            )
+        }
+
+        fn visit_u64<E>(self, value: u64) -> Result<Duration, E>
+        where
+            E: de::Error,
+        {
+            Ok(Duration::from_millis(value))
+        }
+
+        fn visit_i64<E>(self, value: i64) -> Result<Duration, E>
+        where
+            E: de::Error,
+        {
+            u64::try_from(value)
+                .map(|s| Duration::from_millis(s))
+                .map_err(|_| E::custom(format!("value out of range for u64: {}", value)))
+        }
+
+        fn visit_f64<E>(self, value: f64) -> Result<Duration, E>
+        where
+            E: de::Error,
+        {
+            Ok(Duration::from_secs_f64(value / 1e3))
         }
     }
 }

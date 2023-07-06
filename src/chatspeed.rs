@@ -13,7 +13,7 @@ pub async fn get_chatspeed_points(stream: StreamInfo) -> Result<Vec<(DateTime<Ut
     }
 
     let ts = stream.timestamp;
-    let duration = stream.duration;
+    let duration = Duration::from_std(stream.duration)?;
     let (start, end) = (ts, ts + duration);
 
     let items = FileReader::new(stream)
