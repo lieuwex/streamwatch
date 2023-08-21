@@ -1,4 +1,5 @@
 use std::borrow::BorrowMut;
+use std::ops::DerefMut;
 
 use crate::{
     db::Database,
@@ -67,7 +68,7 @@ async fn three() -> Result<()> {
             .bind(datapoint.timestamp.timestamp())
             .bind(datapoint.title)
             .bind(datapoint.viewcount)
-            .execute(&mut tx)
+            .execute(tx.deref_mut())
             .await?;
         }
 
@@ -76,7 +77,7 @@ async fn three() -> Result<()> {
                 .bind(stream.info.id)
                 .bind(jumpcut.at.timestamp())
                 .bind(jumpcut.duration.as_secs() as i64)
-                .execute(&mut tx)
+                .execute(tx.deref_mut())
                 .await?;
         }
 
@@ -103,7 +104,7 @@ async fn four() -> Result<()> {
             sqlx::query("UPDATE streams SET has_chat = ? WHERE id = ?")
                 .bind(has_chat)
                 .bind(stream.info.id)
-                .execute(&mut tx)
+                .execute(tx.deref_mut())
                 .await?;
         }
         tx.commit().await?;

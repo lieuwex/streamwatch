@@ -1,5 +1,5 @@
 #![feature(iter_intersperse)]
-#![feature(hash_drain_filter)]
+#![feature(hash_extract_if)]
 
 mod chat;
 mod chatspeed;

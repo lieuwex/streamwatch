@@ -7,6 +7,7 @@ use streamwatch_shared::types::{
 
 use std::borrow::BorrowMut;
 use std::collections::HashMap;
+use std::ops::DerefMut;
 use std::time::{Duration, Instant};
 
 use sqlx::sqlite::{SqliteConnection, SqlitePool, SqliteRow};
@@ -236,7 +237,7 @@ impl Database {
         let mut tx = conn.begin().await?;
 
         sqlx::query!("DELETE FROM game_features WHERE stream_id = ?1", stream_id)
-            .execute(&mut tx)
+            .execute(tx.deref_mut())
             .await?;
 
         for item in items {
@@ -248,7 +249,7 @@ impl Database {
                 item.id,
                 start_time,
             )
-            .execute(&mut tx)
+            .execute(tx.deref_mut())
             .await?;
         }
 
@@ -273,7 +274,7 @@ impl Database {
             "DELETE FROM person_participations WHERE stream_id = ?1",
             stream_id
         )
-        .execute(&mut tx)
+        .execute(tx.deref_mut())
         .await?;
 
         for id in person_ids {
@@ -282,7 +283,7 @@ impl Database {
                 stream_id,
                 id
             )
-            .execute(&mut tx)
+            .execute(tx.deref_mut())
             .await?;
         }
 
@@ -322,7 +323,7 @@ impl Database {
         let res: sqlx::Result<HashMap<i64, StreamProgress>> =
             sqlx::query("SELECT stream_id,time,real_time FROM stream_progress WHERE user_id = ?1")
                 .bind(user_id)
-                .map(|row| {
+                .map(|row: SqliteRow| {
                     (
                         row.get("stream_id"),
                         StreamProgress {
@@ -361,7 +362,7 @@ impl Database {
                 time,
                 real_time
             )
-            .execute(&mut tx)
+            .execute(tx.deref_mut())
             .await?;
 
             sqlx::query!(
@@ -376,7 +377,7 @@ impl Database {
                 time,
                 real_time
             )
-            .execute(&mut tx)
+            .execute(tx.deref_mut())
             .await?;
         }
         tx.commit().await?;
@@ -524,7 +525,7 @@ impl Database {
             "SELECT ts,loudness,messages FROM stream_hype_datapoints_sad WHERE stream_id = ?",
         )
         .bind(stream_id)
-        .map(|row| HypeDatapoint {
+        .map(|row: SqliteRow| HypeDatapoint {
             ts: Utc.timestamp(row.get("ts"), 0),
             loudness: row.get("loudness"),
             chat_hype: row.get("messages"),
@@ -555,7 +556,7 @@ impl Database {
             "DELETE FROM stream_decibels WHERE stream_id = ?1",
             stream_id
         )
-        .execute(&mut tx)
+        .execute(tx.deref_mut())
         .await?;
 
         for (ts, db) in datapoints {
@@ -565,7 +566,7 @@ impl Database {
                 ts,
                 db,
             )
-            .execute(&mut tx)
+            .execute(tx.deref_mut())
             .await?;
         }
 
@@ -584,7 +585,7 @@ impl Database {
             "DELETE FROM stream_loudness WHERE stream_id = ?1",
             stream_id
         )
-        .execute(&mut tx)
+        .execute(tx.deref_mut())
         .await?;
 
         for dp in datapoints {
@@ -599,7 +600,7 @@ impl Database {
                 dp.integrated,
                 dp.lra,
             )
-            .execute(&mut tx)
+            .execute(tx.deref_mut())
             .await?;
         }
 
@@ -621,7 +622,7 @@ impl Database {
             "DELETE FROM stream_chatspeed_datapoints WHERE stream_id = ?1",
             stream_id
         )
-        .execute(&mut tx)
+        .execute(tx.deref_mut())
         .await?;
 
         for (ts, messages) in datapoints {
@@ -633,7 +634,7 @@ impl Database {
                 ts,
                 messages,
             )
-            .execute(&mut tx)
+            .execute(tx.deref_mut())
             .await?;
         }
 
@@ -665,7 +666,7 @@ impl Database {
         };
 
         let items = query
-            .map(|row| Clip {
+            .map(|row: SqliteRow| Clip {
                 id: row.get("id"),
                 author_id: row.get("author_id"),
                 author_username: row.get("username"),

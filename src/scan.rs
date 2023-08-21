@@ -119,7 +119,7 @@ async fn handle_new_stream(
             jumpcuts_json,
             inserted_at,
         )
-        .execute(&mut tx)
+        .execute(tx.deref_mut())
         .await?
         .last_insert_rowid()
     };
@@ -239,10 +239,10 @@ async fn handle_modified_stream(path: &Path, file_name: String, file_size: i64) 
             duration,
             stream_id,
         )
-        .execute(&mut tx)
+        .execute(tx.deref_mut())
         .await?;
 
-        remove_thumbnails_and_preview(&mut tx, stream_id).await?;
+        remove_thumbnails_and_preview(tx.deref_mut(), stream_id).await?;
 
         tx.commit().await?;
 
@@ -358,7 +358,7 @@ pub async fn scan_streams() -> Result<()> {
                 let stream_id = Database::get_stream_id_by_filename(&mut tx, &file_name)
                     .await
                     .unwrap();
-                remove_thumbnails_and_preview(&mut tx, stream_id).await?;
+                remove_thumbnails_and_preview(tx.deref_mut(), stream_id).await?;
                 Database::remove_stream(&mut tx, stream_id).await?;
             }
         }

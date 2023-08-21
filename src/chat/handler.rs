@@ -47,7 +47,7 @@ pub async fn cache_pruner() {
         let removed_items: Vec<_> = CACHE
             .lock()
             .await
-            .drain_filter(|_, v| v.last_access < (Utc::now() - expiration_duration))
+            .extract_if(|_, v| v.last_access < (Utc::now() - expiration_duration))
             .collect();
 
         let n_removed = removed_items.len();

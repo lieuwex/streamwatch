@@ -45,7 +45,7 @@ static PARTIES: Lazy<Mutex<HashMap<String, PartyInfo>>> = Lazy::new(|| {
 /// Prune the parties list and remove parties that have no receivers in them.
 fn prune_parties() -> usize {
     let mut parties = PARTIES.lock().unwrap();
-    parties.drain_filter(|_, v| v.receiver_count() == 0).count()
+    parties.extract_if(|_, v| v.receiver_count() == 0).count()
 }
 
 #[derive(Clone, Debug, Deserialize)]
