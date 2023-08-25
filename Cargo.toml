@@ -22,7 +22,7 @@ tokio-stream = { version = "0.1.3", features = ["fs"] }
 
 warp = { version = "0.3", features = ["compression"] }
 
-async-compression = { version = "0.3.7", features = ["zstd", "tokio"] }
+async-compression = { version = "0.4.1", features = ["zstd", "tokio"] }
 
 sqlx = { version = "0.7.1", features = [ "runtime-tokio-native-tls", "sqlite", "macros" ] }
 
@@ -39,6 +39,6 @@ uuid = { version = "1.0", features = ["serde", "v4"] }
 anyhow = { version = "1", features = ["backtrace"] }
 
 log = "0.4.0"
-env_logger = "0.9.0"
+env_logger = "0.10.0"
 
-itertools = "0.10.3"
+itertools = "0.11.0"
