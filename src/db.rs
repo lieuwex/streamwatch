@@ -234,6 +234,7 @@ impl Database {
     where
         I: IntoIterator<Item = GameItem>,
     {
+        let real_time = Utc::now().timestamp();
         let mut tx = conn.begin().await?;
 
         sqlx::query!("DELETE FROM game_features WHERE stream_id = ?1", stream_id)
@@ -244,10 +245,11 @@ impl Database {
             let start_time = item.start_time.as_secs_f64();
 
             sqlx::query!(
-                "INSERT INTO game_features(stream_id, game_id, start_time) VALUES(?1, ?2, ?3)",
+                "INSERT INTO game_features(stream_id, game_id, start_time, inserted_at) VALUES(?1, ?2, ?3, ?4)",
                 stream_id,
                 item.id,
                 start_time,
+                real_time,
             )
             .execute(tx.deref_mut())
             .await?;
@@ -268,6 +270,7 @@ impl Database {
         stream_id: i64,
         person_ids: Vec<i64>,
     ) -> Result<()> {
+        let real_time = Utc::now().timestamp();
         let mut tx = conn.begin().await?;
 
         sqlx::query!(
@@ -279,9 +282,10 @@ impl Database {
 
         for id in person_ids {
             sqlx::query!(
-                "INSERT INTO person_participations(stream_id, person_id) VALUES(?1, ?2)",
+                "INSERT INTO person_participations(stream_id, person_id, inserted_at) VALUES(?1, ?2, ?3)",
                 stream_id,
-                id
+                id,
+                real_time,
             )
             .execute(tx.deref_mut())
             .await?;
