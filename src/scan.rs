@@ -386,7 +386,15 @@ pub async fn generate_missing_info() -> Result<()> {
         let stream_id = s.info.id;
         let path = s.info.file_name.stream_path(STREAMS_DIR);
 
-        println!("[{}] does not have preview, generating info", stream_id);
+        if [1170, 1174].contains(&stream_id) {
+            println!(
+                "[{}] while not having preview, this stream is blacklisted, skipping",
+                stream_id
+            );
+            continue;
+        }
+
+        println!("[{}] not preview in database, generating info", stream_id);
 
         remove_thumbnails_and_preview(&db.pool, stream_id).await?;
 
