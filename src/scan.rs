@@ -370,3 +370,34 @@ pub async fn scan_streams() -> Result<()> {
 
     Ok(())
 }
+
+pub async fn generate_missing_info() -> Result<()> {
+    let db = DB.get().unwrap();
+    let sender = SENDER.get().unwrap();
+
+    let mut conn = db.pool.acquire().await?;
+
+    let streams = Database::get_streams(&mut conn).await?;
+    for s in streams {
+        if s.info.has_preview {
+            continue;
+        }
+
+        let stream_id = s.info.id;
+        let path = s.info.file_name.stream_path(STREAMS_DIR);
+
+        println!("[{}] does not have preview, generating info", stream_id);
+
+        remove_thumbnails_and_preview(&db.pool, stream_id).await?;
+
+        sender.send(Job::Thumbnails {
+            stream_id,
+            path: path.clone(),
+        })?;
+        sender.send(Job::Preview { stream_id, path })?;
+        sender.send(Job::Loudness { stream_id })?;
+        sender.send(Job::Chatspeed { stream_id })?;
+    }
+
+    Ok(())
+}

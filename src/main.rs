@@ -17,6 +17,7 @@ mod web;
 
 use crate::chat::cache_pruner;
 use crate::job_handler::spawn_job_watchers;
+use crate::scan::generate_missing_info;
 use crate::web::run_server;
 
 use anyhow::Result;
@@ -36,6 +37,8 @@ async fn main() -> Result<()> {
     spawn_job_watchers(PREVIEW_WORKERS);
 
     migrations::run().await.unwrap();
+
+    generate_missing_info().await?;
 
     tokio::spawn(async {
         cache_pruner().await;
