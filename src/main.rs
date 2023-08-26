@@ -16,7 +16,7 @@ mod watchparty;
 mod web;
 
 use crate::chat::cache_pruner;
-use crate::job_handler::spawn_jobs;
+use crate::job_handler::spawn_job_watchers;
 use crate::web::run_server;
 
 use anyhow::Result;
@@ -33,7 +33,7 @@ async fn main() -> Result<()> {
 
     okky!(DB, db::Database::new().await?);
 
-    spawn_jobs(PREVIEW_WORKERS);
+    spawn_job_watchers(PREVIEW_WORKERS);
 
     migrations::run().await.unwrap();
 

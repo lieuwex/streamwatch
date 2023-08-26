@@ -270,7 +270,7 @@ async fn job_watcher(receiver: Arc<sync::Mutex<JobReceiver>>) {
     }
 }
 
-pub fn spawn_jobs(count: usize) {
+pub fn spawn_job_watchers(count: usize) {
     let (sender, receiver) = {
         let (thumb_sender, thumb_receiver) = sync::mpsc::unbounded_channel();
         let (prev_sender, prev_receiver) = sync::mpsc::unbounded_channel();
