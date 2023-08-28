@@ -494,6 +494,8 @@ impl Database {
         stream_id: i64,
         title: String,
     ) -> Result<()> {
+        let inserted_at = Utc::now().timestamp();
+
         if title.is_empty() {
             sqlx::query!(
                 "DELETE FROM custom_stream_titles WHERE stream_id = ?1",
@@ -505,14 +507,16 @@ impl Database {
             sqlx::query!(
                 r#"
                 INSERT INTO custom_stream_titles
-                    (stream_id, title)
+                    (stream_id, title, inserted_at)
                 VALUES
-                    (?1, ?2)
+                    (?1, ?2, ?3)
                 ON CONFLICT DO UPDATE SET
-                    title = ?2
+                    title = ?2,
+                    inserted_at = ?3
                 "#,
                 stream_id,
-                title
+                title,
+                inserted_at
             )
             .execute(conn.borrow_mut())
             .await?;
