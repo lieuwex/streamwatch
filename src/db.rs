@@ -210,11 +210,13 @@ impl Database {
         twitch_name: Option<String>,
         platform: Option<String>,
     ) -> Result<GameInfo> {
+        let inserted_at = Utc::now().timestamp();
         let res = sqlx::query!(
-            "INSERT INTO GAMES(name, platform, twitch_name) VALUES(?1, ?2, ?3)",
+            "INSERT INTO games(name, platform, twitch_name, inserted_at) VALUES(?1, ?2, ?3, ?4)",
             name,
             platform,
-            twitch_name
+            twitch_name,
+            inserted_at
         )
         .execute(conn)
         .await?;
