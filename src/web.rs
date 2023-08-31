@@ -306,6 +306,16 @@ async fn update_clip(
     }
 }
 
+async fn add_twitch_progress(
+    username: String,
+    password: PasswordQuery,
+) -> Result<impl warp::Reply, warp::Rejection> {
+    let mut conn = get_conn!();
+    let user_id = check_username_password!(&mut conn, &username, password, Err(warp::reject()));
+    check!(Database::add_twitch_progress(&mut conn, user_id).await);
+    Ok(warp::reply::with_status(warp::reply(), StatusCode::CREATED))
+}
+
 pub async fn run_server() {
     let endpoints = {
         let cors = warp::cors()
@@ -371,6 +381,10 @@ pub async fn run_server() {
                     .and(warp::path!("user" / String / "ratings"))
                     .and(warp::query())
                     .and_then(get_stream_ratings))
+                .or(warp::post()
+                    .and(warp::path!("user" / String / "twitchProgress"))
+                    .and(warp::query())
+                    .and_then(add_twitch_progress))
                 .or(warp::get()
                     .and(warp::path!("parties"))
                     .and_then(get_watch_parties))

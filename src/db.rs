@@ -785,4 +785,60 @@ impl Database {
 
         Ok(())
     }
+
+    pub async fn add_twitch_progress(conn: &mut SqliteConnection, user_id: i64) -> Result<()> {
+        let timestamp = Utc::now().timestamp();
+
+        sqlx::query!(
+            r#"
+            INSERT INTO twitch_progress
+                (user_id, real_time)
+            VALUES
+                (?1, ?2)
+            "#,
+            user_id,
+            timestamp,
+        )
+        .execute(conn.borrow_mut())
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn convert_twitch_progress(
+        conn: &mut SqliteConnection,
+        stream_id: i64,
+    ) -> Result<()> {
+        // TODO: transaction instead of conn
+
+        let stream = Database::get_stream_by_id(conn, stream_id).await?.unwrap();
+
+        let stream_start = stream.info.timestamp.timestamp();
+        let stream_end = stream_start + (stream.info.duration.as_secs() as i64);
+
+        let items = sqlx::query!(
+            "SELECT user_id,MAX(real_time) as real_time FROM twitch_progress WHERE real_time BETWEEN ?1 AND ?2 GROUP BY user_id",
+            stream_start,
+            stream_end
+        )
+        .map(|row| (row.user_id.unwrap(), row.real_time))
+        .fetch_all(conn.borrow_mut())
+        .await?;
+
+        for (user_id, ts) in items {
+            let time = ts - stream_start;
+            assert!(time >= 0);
+
+            Database::update_streams_progress(
+                conn,
+                user_id,
+                HashMap::from([(stream_id, time as f64)]),
+            )
+            .await?;
+        }
+
+        // TODO: remove twitch_progress we imported
+
+        Ok(())
+    }
 }

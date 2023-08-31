@@ -189,6 +189,8 @@ async fn handle_new_stream(
         });
     Database::replace_games(&mut tx, stream_id, games).await?;
 
+    Database::convert_twitch_progress(&mut tx, stream_id).await?;
+
     tx.commit().await?;
 
     sender.send(Job::Thumbnails {
