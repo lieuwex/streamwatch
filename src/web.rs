@@ -170,7 +170,7 @@ async fn set_streams_progress(
         Ok(reply_status!(StatusCode::UNAUTHORIZED))
     );
 
-    check!(Database::update_streams_progress(&mut conn, user_id, progress).await);
+    check!(Database::update_streams_progress(&mut conn, user_id, progress, Utc::now()).await);
 
     Ok(warp::reply().into_response())
 }

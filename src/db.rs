@@ -348,8 +348,9 @@ impl Database {
         conn: &mut SqliteConnection,
         user_id: i64,
         progress: HashMap<i64, f64>,
+        real_time: DateTime<Utc>,
     ) -> Result<()> {
-        let real_time = Utc::now().timestamp();
+        let real_time = real_time.timestamp();
 
         let mut tx = conn.begin().await?;
         for (stream_id, time) in progress {
@@ -836,6 +837,7 @@ impl Database {
                 &mut tx,
                 user_id,
                 HashMap::from([(stream_id, time as f64)]),
+                Utc.timestamp(ts, 0),
             )
             .await?;
         }
