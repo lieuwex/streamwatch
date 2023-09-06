@@ -820,11 +820,11 @@ impl Database {
         let stream_end = stream_start + (stream.info.duration.as_secs() as i64);
 
         let items = sqlx::query!(
-            "SELECT user_id,MAX(real_time) AS real_time FROM twitch_progress WHERE real_time BETWEEN ?1 AND ?2 GROUP BY user_id",
+            "SELECT user_id,real_time FROM twitch_progress WHERE real_time BETWEEN ?1 AND ?2 ORDER BY real_time ASC",
             stream_start,
             stream_end
         )
-        .map(|row| (row.user_id.unwrap(), row.real_time))
+        .map(|row| (row.user_id, row.real_time))
         .fetch_all(tx.deref_mut())
         .await?;
 
