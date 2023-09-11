@@ -362,6 +362,7 @@ pub async fn scan_streams() -> Result<()> {
                     .unwrap();
                 remove_thumbnails_and_preview(tx.deref_mut(), stream_id).await?;
                 Database::remove_stream(&mut tx, stream_id).await?;
+                tx.commit().await?;
             }
         }
     }
