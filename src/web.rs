@@ -51,6 +51,56 @@ macro_rules! check_username_password {
     }};
 }
 
+async fn _get_clips(
+    stream_id: Option<i64>,
+    hashes: HashMap<String, String>,
+) -> Result<warp::reply::Json, warp::Rejection> {
+    #[derive(Serialize)]
+    struct ClipJson {
+        #[serde(flatten)]
+        pub clip: Clip,
+        pub watched: bool,
+    }
+
+    let mut conn = get_conn!();
+
+    let username = hashes.get("username").cloned().unwrap_or(String::new());
+    let user_pass: Option<(String, String)> = if !username.is_empty() {
+        let password = hashes.get("password").cloned().unwrap_or(String::new());
+        Some((username, password))
+    } else {
+        None
+    };
+
+    let viewed_map: HashSet<i64> = if let Some((username, password)) = user_pass {
+        let user_id =
+            check_username_password!(&mut conn, &username, &password, Err(warp::reject()));
+
+        check!(
+            sqlx::query!(
+                "SELECT DISTINCT clip_id FROM clip_views WHERE user_id = ?1",
+                user_id
+            )
+            .map(|row| row.clip_id)
+            .fetch(conn.deref_mut())
+            .try_collect()
+            .await
+        )
+    } else {
+        HashSet::new()
+    };
+
+    let clips = check!(Database::get_clips(&mut conn, stream_id).await);
+    let clips: Vec<_> = clips
+        .into_iter()
+        .map(|clip| ClipJson {
+            watched: viewed_map.contains(&clip.id),
+            clip,
+        })
+        .collect();
+    Ok(warp::reply::json(&clips))
+}
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct PasswordQuery {
     password: String,
@@ -87,9 +137,11 @@ async fn get_stream_hype(stream_id: i64) -> Result<warp::reply::Json, warp::Reje
     Ok(warp::reply::json(&datapoints))
 }
 
-async fn get_stream_clips(stream_id: i64) -> Result<warp::reply::Json, warp::Rejection> {
-    let clips = check!(Database::get_clips(conn!(), Some(stream_id)).await);
-    Ok(warp::reply::json(&clips))
+async fn get_stream_clips(
+    stream_id: i64,
+    hashes: HashMap<String, String>,
+) -> Result<warp::reply::Json, warp::Rejection> {
+    _get_clips(Some(stream_id), hashes).await
 }
 
 async fn get_stream_ratings(
@@ -222,50 +274,7 @@ async fn rescan_streams() -> Result<impl warp::Reply, warp::Rejection> {
 async fn get_all_clips(
     hashes: HashMap<String, String>,
 ) -> Result<warp::reply::Json, warp::Rejection> {
-    #[derive(Serialize)]
-    struct ClipJson {
-        #[serde(flatten)]
-        pub clip: Clip,
-        pub watched: bool,
-    }
-
-    let mut conn = get_conn!();
-
-    let username = hashes.get("username").cloned().unwrap_or(String::new());
-    let user_pass: Option<(String, String)> = if !username.is_empty() {
-        let password = hashes.get("password").cloned().unwrap_or(String::new());
-        Some((username, password))
-    } else {
-        None
-    };
-
-    let viewed_map: HashSet<i64> = if let Some((username, password)) = user_pass {
-        let user_id =
-            check_username_password!(&mut conn, &username, &password, Err(warp::reject()));
-
-        check!(
-            sqlx::query!(
-                "SELECT DISTINCT clip_id FROM clip_views WHERE user_id = ?1",
-                user_id
-            )
-            .map(|row| row.clip_id)
-            .fetch(conn.deref_mut())
-            .try_collect()
-            .await
-        )
-    } else {
-        HashSet::new()
-    };
-
-    let clips = check!(Database::get_clips(conn!(), None).await);
-    let clips: Vec<_> = clips
-        .into_iter()
-        .map(|clip| ClipJson {
-            watched: viewed_map.contains(&clip.id),
-            clip,
-        })
-        .collect();
-    Ok(warp::reply::json(&clips))
+    _get_clips(None, hashes).await
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -414,6 +423,7 @@ pub async fn run_server() {
                     .and_then(get_stream_hype))
                 .or(warp::get()
                     .and(warp::path!("stream" / i64 / "clips"))
+                    .and(warp::query())
                     .and_then(get_stream_clips))
                 .or(warp::post()
                     .and(warp::path!("stream" / i64 / "rate"))
