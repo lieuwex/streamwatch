@@ -6,10 +6,17 @@ use crate::util::AnyhowError;
 use crate::watchparty::{get_watch_parties, watch_party_ws};
 use crate::{check, conn, get_conn, DB, STREAMS_DIR};
 
-use streamwatch_shared::types::{ConversionProgress, CreateClipRequest, GameItem, StreamJson};
+use chrono::Utc;
+use futures::TryStreamExt;
+use serde_json::value::RawValue;
+use streamwatch_shared::types::{
+    Clip, ConversionProgress, CreateClipRequest, GameItem, StreamJson,
+};
 
-use std::collections::HashMap;
+use std::borrow::BorrowMut;
+use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
+use std::ops::DerefMut;
 use std::str::FromStr;
 
 use warp::http::StatusCode;
@@ -17,7 +24,7 @@ use warp::{Filter, Reply};
 
 use anyhow::anyhow;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 macro_rules! reply_status {
     ($reply:expr, $code:expr) => {
@@ -36,7 +43,7 @@ macro_rules! check_username_password {
             Some(id) => id,
         };
 
-        if !check!(Database::check_password($conn, user_id, &$password.password).await) {
+        if !check!(Database::check_password($conn, user_id, $password).await) {
             return $on_err;
         }
 
@@ -94,7 +101,7 @@ async fn get_stream_ratings(
     let user_id = check_username_password!(
         &mut conn,
         &username,
-        password,
+        &password.password,
         Ok(reply_status!(StatusCode::UNAUTHORIZED))
     );
 
@@ -122,7 +129,7 @@ async fn rate_stream(
     let user_id = check_username_password!(
         &mut conn,
         &username,
-        password,
+        &password.password,
         Ok(reply_status!(StatusCode::UNAUTHORIZED))
     );
 
@@ -148,7 +155,7 @@ async fn get_streams_progress(
     let user_id = check_username_password!(
         &mut conn,
         &username,
-        password,
+        &password.password,
         Ok(reply_status!(StatusCode::UNAUTHORIZED))
     );
 
@@ -166,7 +173,7 @@ async fn set_streams_progress(
     let user_id = check_username_password!(
         &mut conn,
         &username,
-        password,
+        &password.password,
         Ok(reply_status!(StatusCode::UNAUTHORIZED))
     );
 
@@ -260,7 +267,7 @@ async fn create_clip(
     let user_id = check_username_password!(
         &mut conn,
         &clip_request.author_username,
-        password,
+        &password.password,
         Ok(warp::reply::json(&n))
     );
 
@@ -288,7 +295,7 @@ async fn update_clip(
     let user_id = check_username_password!(
         &mut conn,
         &clip_request.author_username,
-        password,
+        &password.password,
         Ok(warp::reply::json(&n))
     );
 
@@ -311,7 +318,12 @@ async fn add_twitch_progress(
     password: PasswordQuery,
 ) -> Result<impl warp::Reply, warp::Rejection> {
     let mut conn = get_conn!();
-    let user_id = check_username_password!(&mut conn, &username, password, Err(warp::reject()));
+    let user_id = check_username_password!(
+        &mut conn,
+        &username,
+        &password.password,
+        Err(warp::reject())
+    );
     check!(Database::add_twitch_progress(&mut conn, user_id).await);
     Ok(warp::reply::with_status(warp::reply(), StatusCode::CREATED))
 }
