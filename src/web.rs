@@ -240,12 +240,8 @@ async fn get_all_clips(
     };
 
     let viewed_map: HashSet<i64> = if let Some((username, password)) = user_pass {
-        let user_id = Some(check_username_password!(
-            &mut conn,
-            &username,
-            &password,
-            Err(warp::reject())
-        ));
+        let user_id =
+            check_username_password!(&mut conn, &username, &password, Err(warp::reject()));
 
         check!(
             sqlx::query!(
