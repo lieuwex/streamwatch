@@ -49,12 +49,7 @@ where
     Ok(())
 }
 
-async fn handle_new_stream(
-    path: &Path,
-    file_name: String,
-    file_size: i64,
-    possible_games: &mut Vec<GameInfo>,
-) -> Result<()> {
+async fn handle_new_stream(path: &Path, file_name: String, file_size: i64) -> Result<()> {
     let db = DB.get().unwrap();
     let sender = SENDER.get().unwrap();
 
@@ -126,7 +121,7 @@ async fn handle_new_stream(
 
     struct FoldState<'a, 'b> {
         games: Vec<GameFeature>,
-        possible_games: &'a mut Vec<GameInfo>,
+        possible_games: Vec<GameInfo>,
         tx: &'b mut sqlx::Transaction<'a, sqlx::Sqlite>,
     }
 
@@ -136,7 +131,7 @@ async fn handle_new_stream(
         .try_fold(
             FoldState {
                 games: vec![],
-                possible_games,
+                possible_games: Database::get_possible_games(tx.deref_mut()).await?,
                 tx: &mut tx,
             },
             |mut state: FoldState<'_, '_>, datapoint| async move {
@@ -333,8 +328,6 @@ pub async fn scan_streams() -> Result<()> {
         m
     };
 
-    let mut possible_games = Database::get_possible_games(get_conn().await?.borrow_mut()).await?;
-
     let mut all_unchanged = true;
     for (file_name, (file_size, state)) in file_name_states {
         let path = Path::new(STREAMS_DIR).join(file_name.clone());
@@ -344,7 +337,7 @@ pub async fn scan_streams() -> Result<()> {
             ItemState::New => {
                 println!("got new item: {}", file_name);
                 all_unchanged = false;
-                handle_new_stream(&path, file_name, file_size as i64, &mut possible_games).await?;
+                handle_new_stream(&path, file_name, file_size as i64).await?;
             }
             ItemState::Modified => {
                 println!("got updated item: {}", file_name);
