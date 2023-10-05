@@ -2,12 +2,12 @@ use crate::chat::handle_chat_request;
 use crate::db::Database;
 use crate::job_handler::{Job, SENDER};
 use crate::scan::scan_streams;
-use crate::util::AnyhowError;
+use crate::util::{get_conn, AnyhowError};
 use crate::watchparty::{get_watch_parties, watch_party_ws};
 use crate::{check, conn, get_conn, DB, STREAMS_DIR};
 
 use chrono::Utc;
-use futures::TryStreamExt;
+use futures::stream::{iter, StreamExt, TryStreamExt};
 use serde_json::value::RawValue;
 use streamwatch_shared::types::{
     Clip, ConversionProgress, CreateClipRequest, GameItem, StreamJson,
@@ -18,6 +18,7 @@ use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 use std::ops::DerefMut;
 use std::str::FromStr;
+use std::time::Duration;
 
 use warp::http::StatusCode;
 use warp::{Filter, Reply};
@@ -60,6 +61,7 @@ async fn _get_clips(
         #[serde(flatten)]
         pub clip: Clip,
         pub watched: bool,
+        pub safe_to_watch: bool,
     }
 
     let mut conn = get_conn!();
@@ -72,33 +74,47 @@ async fn _get_clips(
         None
     };
 
-    let viewed_map: HashSet<i64> = if let Some((username, password)) = user_pass {
-        let user_id =
-            check_username_password!(&mut conn, &username, &password, Err(warp::reject()));
-
-        check!(
-            sqlx::query!(
-                "SELECT DISTINCT clip_id FROM clip_views WHERE user_id = ?1",
-                user_id
-            )
-            .map(|row| row.clip_id)
-            .fetch(conn.deref_mut())
-            .try_collect()
-            .await
-        )
+    let user_id: Option<i64> = if let Some((username, password)) = user_pass {
+        let id = check_username_password!(&mut conn, &username, &password, Err(warp::reject()));
+        Some(id)
     } else {
-        HashSet::new()
+        None
     };
 
     let clips = check!(Database::get_clips(&mut conn, stream_id).await);
-    let clips: Vec<_> = clips
-        .into_iter()
-        .map(|clip| ClipJson {
-            watched: viewed_map.contains(&clip.id),
-            clip,
+    let clips: anyhow::Result<Vec<_>> = iter(clips)
+        .map(|c| anyhow::Ok(c))
+        .and_then(|clip| async {
+            let mut conn = get_conn().await?;
+
+            let watched = sqlx::query!(
+                "SELECT COUNT(*) AS cnt FROM clip_views WHERE user_id = ?1 AND clip_id = ?2",
+                user_id,
+                clip.id,
+            )
+            .map(|row| row.cnt > 0)
+            .fetch_one(conn.deref_mut())
+            .await?;
+
+            let safe_to_watch = sqlx::query!(
+                "SELECT time FROM stream_progress WHERE user_id = ?1 AND stream_id = ?2",
+                user_id,
+                clip.stream_id,
+            )
+            .map(|row| Duration::from_secs_f64(row.time) >= (clip.start_time + clip.duration))
+            .fetch_optional(conn.deref_mut())
+            .await?
+            .unwrap_or(false);
+
+            anyhow::Ok(ClipJson {
+                watched,
+                safe_to_watch,
+                clip,
+            })
         })
-        .collect();
-    Ok(warp::reply::json(&clips))
+        .try_collect()
+        .await;
+    Ok(warp::reply::json(&check!(clips)))
 }
 
 #[derive(Clone, Debug, Deserialize)]
