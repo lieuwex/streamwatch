@@ -840,6 +840,8 @@ impl Database {
                 Utc.timestamp(ts, 0),
             )
             .await?;
+
+            println!("[{stream_id}] set progress for {user_id} to {time}");
         }
 
         // TODO: remove twitch_progress we imported
