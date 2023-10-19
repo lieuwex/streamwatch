@@ -181,11 +181,14 @@ impl Database {
             .map(|row| ConversionProgress {
                 id: row.id,
                 filename: row.filename,
-                ts: Utc.timestamp(row.ts, 0),
+                total: Duration::from_secs_f64(row.total),
+                started_at: row.started_at.map(|ts| Utc.timestamp(ts, 0)),
+                updated_at: row.updated_at.map(|ts| Utc.timestamp(ts, 0)),
                 datapoint_title: row.datapoint_title,
                 games: row.games,
-                progress: Duration::from_secs_f64(f64::from(row.progress)), // HACK: should be f64 directly
-                eta: row.eta.map(|x| f64::from(x)), // HACK: should be f64 directly
+                progress: Duration::from_secs_f64(row.progress),
+                eta: row.eta,
+                finished: row.finished,
             })
             .fetch_all(conn.borrow_mut())
             .await?;

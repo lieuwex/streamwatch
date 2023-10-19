@@ -104,6 +104,13 @@ async fn handle_new_stream(path: &Path, file_name: String, file_size: i64) -> Re
         let inserted_at = Utc::now().timestamp();
 
         sqlx::query!(
+            "DELETE FROM stream_conversion_progress WHERE filename = ?1",
+            file_name,
+        )
+        .execute(tx.deref_mut())
+        .await?;
+
+        sqlx::query!(
             "INSERT INTO streams(filename, filesize, ts, duration, preview_count, thumbnail_count, has_chat, datapoints_json, jumpcuts_json, inserted_at) values(?1, ?2, ?3, ?4, 0, 0, ?5, ?6, ?7, ?8)",
             file_name,
             file_size,

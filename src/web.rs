@@ -11,7 +11,6 @@ use futures::TryStreamExt;
 use serde_json::value::RawValue;
 use streamwatch_shared::types::{
     Clip, ConversionProgress, CreateClipRequest, GameItem, StreamJson, StreamProgress,
-    StreamProgress,
 };
 
 use std::borrow::BorrowMut;

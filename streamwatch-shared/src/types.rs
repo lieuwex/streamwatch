@@ -229,13 +229,18 @@ pub struct DbMessage {
 pub struct ConversionProgress {
     pub id: i64,
     pub filename: String,
-    #[serde(with = "ts_seconds")]
-    pub ts: DateTime<Utc>,
+    #[serde(with = "duration_seconds_float")]
+    pub total: Duration,
+    #[serde(with = "ts_seconds_option")]
+    pub started_at: Option<DateTime<Utc>>,
+    #[serde(with = "ts_seconds_option")]
+    pub updated_at: Option<DateTime<Utc>>,
     pub datapoint_title: Option<String>,
     pub games: Option<String>,
     #[serde(with = "duration_seconds_float")]
     pub progress: Duration,
     pub eta: Option<f64>,
+    pub finished: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
