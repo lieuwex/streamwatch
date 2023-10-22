@@ -91,7 +91,7 @@ impl FileReader {
                 continue;
             }
 
-            let json = RawValue::from_string(json.to_string())?;
+            let json = serde_json::from_str(json)?;
             if datetime > end {
                 self.orphan = Some((datetime, json));
                 break;
