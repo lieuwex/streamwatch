@@ -1,3 +1,4 @@
+use chrono::{DateTime, TimeZone, Utc};
 use sqlx::{pool::PoolConnection, Sqlite};
 use warp::reject::Reject;
 
@@ -99,4 +100,10 @@ macro_rules! conn {
 pub async fn get_conn() -> anyhow::Result<PoolConnection<Sqlite>> {
     let db = DB.get().unwrap();
     Ok(db.pool.acquire().await?)
+}
+
+pub fn timestamp(secs: i64) -> DateTime<Utc> {
+    Utc.timestamp_opt(secs, 0)
+        .single()
+        .expect("Timestamp out-of-range")
 }

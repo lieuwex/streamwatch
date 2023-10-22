@@ -1,6 +1,6 @@
 use crate::db::Database;
 use crate::job_handler::{Job, SENDER};
-use crate::util::get_conn;
+use crate::util::{get_conn, timestamp};
 use crate::{DB, STREAMS_DIR};
 
 use streamwatch_shared::functions::{get_video_duration, parse_filename};
@@ -19,7 +19,7 @@ use tokio_stream::wrappers::ReadDirStream;
 
 use futures::stream::{iter, StreamExt, TryStreamExt};
 
-use chrono::{TimeZone, Utc};
+use chrono::Utc;
 
 use anyhow::{bail, Result};
 
@@ -59,7 +59,7 @@ async fn handle_new_stream(path: &Path, file_name: String, file_size: i64) -> Re
         Some((date, _)) => date.with_timezone(&Utc),
         None => {
             eprintln!("error parsing timestamp for {:?}", path);
-            Utc.timestamp(0, 0)
+            timestamp(0)
         }
     };
 
@@ -145,8 +145,7 @@ async fn handle_new_stream(path: &Path, file_name: String, file_size: i64) -> Re
                 let last_item_same_game = state
                     .games
                     .last()
-                    .map(|g| g.info.twitch_name.as_ref().unwrap() == &datapoint.game)
-                    .unwrap_or(false);
+                    .is_some_and(|g| g.info.twitch_name.as_ref().unwrap() == &datapoint.game);
                 if last_item_same_game {
                     return Ok(state);
                 }

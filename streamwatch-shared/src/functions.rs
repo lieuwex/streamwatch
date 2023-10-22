@@ -53,7 +53,7 @@ pub fn parse_filename(path: &Path) -> Option<(DateTime<Local>, DateType)> {
             FILE_STEM_REGEX_DATE
                 .find(stem)
                 .and_then(|m| NaiveDate::parse_from_str(m.as_str(), "%Y-%m-%d").ok())
-                .map(|d| (d.and_hms(0, 0, 0), DateType::DateOnly))
+                .map(|d| (d.and_hms_opt(0, 0, 0).unwrap(), DateType::DateOnly))
         })?;
 
     Some((Local.from_local_datetime(&naive_datetime).unwrap(), typ))

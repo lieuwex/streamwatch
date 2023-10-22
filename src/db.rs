@@ -1,4 +1,5 @@
 use crate::loudness::LoudnessDatapoint;
+use crate::util::timestamp;
 
 use streamwatch_shared::types::{
     Clip, ConversionProgress, CreateClipRequest, DbMessage, GameInfo, GameItem, HypeDatapoint,
@@ -15,7 +16,7 @@ use sqlx::{Connection, Row};
 
 use anyhow::Result;
 
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, Utc};
 
 use futures::TryStreamExt;
 
@@ -44,10 +45,10 @@ impl Database {
                     let x: i64 = row.get("filesize");
                     x as u64
                 },
-                timestamp: Utc.timestamp(row.get("ts"), 0),
+                timestamp: timestamp(row.get("ts")),
                 inserted_at: {
                     let inserted_at: Option<i64> = row.get("inserted_at");
-                    inserted_at.map(|x| Utc.timestamp(x, 0))
+                    inserted_at.map(|x| timestamp(x))
                 },
                 duration: Duration::from_secs_f64(row.get("duration")),
                 has_preview: {
@@ -182,8 +183,8 @@ impl Database {
                 id: row.id,
                 filename: row.filename,
                 total: Duration::from_secs_f64(row.total),
-                started_at: row.started_at.map(|ts| Utc.timestamp(ts, 0)),
-                updated_at: row.updated_at.map(|ts| Utc.timestamp(ts, 0)),
+                started_at: row.started_at.map(|ts| timestamp(ts)),
+                updated_at: row.updated_at.map(|ts| timestamp(ts)),
                 datapoint_title: row.datapoint_title,
                 games: row.games,
                 progress: Duration::from_secs_f64(row.progress),
@@ -337,7 +338,7 @@ impl Database {
                         row.get("stream_id"),
                         StreamProgress {
                             time: Duration::from_secs_f64(row.get("time")),
-                            real_time: Utc.timestamp(row.get("real_time"), 0),
+                            real_time: timestamp(row.get("real_time")),
                         },
                     )
                 })
@@ -431,8 +432,8 @@ impl Database {
                 author_id: row.get("author_id"),
                 author_name: row.get("author_name"),
                 message: row.get("content"),
-                time: Utc.timestamp(row.get("time"), 0),
-                real_time: Utc.timestamp(row.get("real_time"), 0),
+                time: timestamp(row.get("time")),
+                real_time: timestamp(row.get("real_time")),
             })
             .fetch_all(conn.borrow_mut())
             .await?;
@@ -540,7 +541,7 @@ impl Database {
         )
         .bind(stream_id)
         .map(|row: SqliteRow| HypeDatapoint {
-            ts: Utc.timestamp(row.get("ts"), 0),
+            ts: timestamp(row.get("ts")),
             loudness: row.get("loudness"),
             chat_hype: row.get("messages"),
             hype: {
@@ -840,7 +841,7 @@ impl Database {
                 &mut tx,
                 user_id,
                 HashMap::from([(stream_id, time as f64)]),
-                Utc.timestamp(ts, 0),
+                timestamp(ts),
             )
             .await?;
 

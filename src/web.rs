@@ -13,12 +13,10 @@ use streamwatch_shared::types::{
     Clip, ConversionProgress, CreateClipRequest, GameItem, StreamJson, StreamProgress,
 };
 
-use std::borrow::BorrowMut;
 use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 use std::ops::DerefMut;
 use std::str::FromStr;
-use std::time::Duration;
 
 use warp::http::StatusCode;
 use warp::{Filter, Reply};
@@ -104,7 +102,7 @@ async fn _get_clips(
             watched: viewed_set.contains(&clip.id),
             safe_to_watch: stream_progress
                 .get(&clip.stream_id)
-                .map_or(false, |p| p.time >= (clip.start_time + clip.duration)),
+                .is_some_and(|p| p.time >= (clip.start_time + clip.duration)),
             clip,
         })
         .collect();
