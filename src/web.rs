@@ -103,7 +103,7 @@ async fn _get_clips(
         .map(|clip| ClipJson {
             watched: viewed_set.contains(&clip.id),
             safe_to_watch: stream_progress
-                .get(&clip.id)
+                .get(&clip.stream_id)
                 .map_or(false, |p| p.time >= (clip.start_time + clip.duration)),
             clip,
         })
