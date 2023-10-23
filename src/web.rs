@@ -206,6 +206,34 @@ async fn set_custom_title(
     Ok(warp::reply().into_response())
 }
 
+async fn get_stream_other_progress(
+    stream_id: i64,
+    hashes: HashMap<String, String>,
+) -> Result<warp::reply::Json, warp::Rejection> {
+    let username = hashes.get("username").cloned().unwrap_or(String::new());
+    if username.is_empty() {
+        let m: HashMap<String, f64> = HashMap::new();
+        return Ok(warp::reply::json(&m));
+    }
+    let password = hashes.get("password").cloned().unwrap_or(String::new());
+
+    let mut conn = get_conn!();
+
+    let user_id = check_username_password!(&mut conn, &username, &password, Err(warp::reject()));
+    let other_progress: HashMap<String, f64> = check!(
+        sqlx::query!(
+            "SELECT username,time FROM stream_progress JOIN users ON users.id=user_id WHERE stream_id = ?1 AND user_id <> ?2",
+            stream_id,
+            user_id,
+        )
+        .map(|row| (row.username, row.time))
+        .fetch(conn.deref_mut())
+        .try_collect()
+        .await
+    );
+    Ok(warp::reply::json(&other_progress))
+}
+
 async fn get_streams_progress(
     username: String,
     password: PasswordQuery,
@@ -442,6 +470,10 @@ pub async fn run_server() {
                     .and(warp::path!("stream" / i64 / "title"))
                     .and(warp::body::json())
                     .and_then(set_custom_title))
+                .or(warp::get()
+                    .and(warp::path!("stream" / i64 / "otherProgress"))
+                    .and(warp::query())
+                    .and_then(get_stream_other_progress))
                 .or(warp::put()
                     .and(warp::path!("user" / String / "progress"))
                     .and(warp::query())
