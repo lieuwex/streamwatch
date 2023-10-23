@@ -222,7 +222,13 @@ async fn get_stream_other_progress(
     let user_id = check_username_password!(&mut conn, &username, &password, Err(warp::reject()));
     let other_progress: HashMap<String, f64> = check!(
         sqlx::query!(
-            "SELECT username,time FROM stream_progress JOIN users ON users.id=user_id WHERE stream_id = ?1 AND user_id <> ?2",
+            r#"
+                SELECT username,time
+                FROM stream_progress
+                JOIN users ON users.id=user_id
+                WHERE stream_id = ?1
+                    AND user_id <> ?2
+                    AND (SELECT COUNT(*) FROM progress_visible_for WHERE from_user=user_id AND to_user=?2)>0"#,
             stream_id,
             user_id,
         )
