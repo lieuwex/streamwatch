@@ -190,6 +190,7 @@ impl Database {
                 progress: Duration::from_secs_f64(row.progress),
                 eta: row.eta,
                 finished: row.finished,
+                ts: timestamp(row.ts),
             })
             .fetch_all(conn.borrow_mut())
             .await?;

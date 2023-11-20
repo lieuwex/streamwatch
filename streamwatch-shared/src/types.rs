@@ -241,6 +241,8 @@ pub struct ConversionProgress {
     pub progress: Duration,
     pub eta: Option<f64>,
     pub finished: bool,
+    #[serde(with = "ts_seconds")]
+    pub ts: DateTime<Utc>,
 }
 
 #[derive(Clone, Debug, Serialize)]
