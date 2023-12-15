@@ -226,9 +226,7 @@ async fn get_stream_other_progress(
                 SELECT username,time
                 FROM stream_progress
                 JOIN users ON users.id=user_id
-                WHERE stream_id = ?1
-                    AND user_id <> ?2
-                    AND (SELECT COUNT(*) FROM progress_visible_for WHERE from_user=user_id AND to_user=?2)>0"#,
+                WHERE stream_id = ?1 AND user_id <> ?2"#,
             stream_id,
             user_id,
         )
