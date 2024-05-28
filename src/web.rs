@@ -535,7 +535,8 @@ pub async fn run_server() {
 
         let uncompressed = (warp::path("stream").and(warp::fs::dir(STREAMS_DIR)))
             .or(warp::path("preview").and(warp::fs::dir("./previews")))
-            .or(warp::path("thumbnail").and(warp::fs::dir("./thumbnails")));
+            .or(warp::path("thumbnail").and(warp::fs::dir("./thumbnails")))
+            .or(warp::path("scrub_thumbnail").and(warp::fs::dir("./scrub_thumbnails")));
 
         compressed.or(uncompressed).with(cors).with(log)
     };

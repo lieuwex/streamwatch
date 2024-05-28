@@ -1,12 +1,12 @@
 use std::borrow::BorrowMut;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
 use crate::chatspeed::get_chatspeed_points;
 use crate::create_preview::{
     create_clip_preview, create_clip_thumbnail, create_preview, create_thumbnails,
-    get_sections_from_file,
+    get_sections_from_file, PREVIEW_PER_SECS, SCRUB_PER_SECS,
 };
 use crate::db::Database;
 use crate::loudness::get_loudness_points;
@@ -112,7 +112,7 @@ pub enum Job {
 }
 
 async fn make_preview(stream_id: i64, path: PathBuf) -> Result<()> {
-    let sections = get_sections_from_file(&path).await?;
+    let sections = get_sections_from_file(&path, PREVIEW_PER_SECS).await?;
     println!("[{}] sections are: {:?}", stream_id, sections);
 
     let start = Instant::now();
@@ -162,8 +162,8 @@ async fn make_clip_preview(clip_id: i64) -> Result<()> {
     Ok(())
 }
 
-async fn make_thumbnails(stream_id: i64, path: PathBuf) -> Result<()> {
-    let sections = get_sections_from_file(&path).await?;
+async fn make_thumbnails(stream_id: i64, path: &Path) -> Result<()> {
+    let sections = get_sections_from_file(path, PREVIEW_PER_SECS).await?;
     println!("[{}] sections are: {:?}", stream_id, sections);
 
     let start = Instant::now();
@@ -181,6 +181,26 @@ async fn make_thumbnails(stream_id: i64, path: PathBuf) -> Result<()> {
     )
     .execute(&db.pool)
     .await?;
+
+    println!(
+        "[{}] made {} thumbnails in {:?}",
+        stream_id,
+        sections.len(),
+        start.elapsed()
+    );
+
+    Ok(())
+}
+
+async fn make_scrub_thumbnails(stream_id: i64, path: &Path) -> Result<()> {
+    let sections = get_sections_from_file(path, SCRUB_PER_SECS).await?;
+    println!("[{}] sections are: {:?}", stream_id, sections);
+
+    let start = Instant::now();
+
+    let thumbnail_path = StreamInfo::scrub_thumbnails_path(stream_id);
+    let ts: Vec<_> = sections.iter().map(|(a, _)| *a).collect();
+    create_thumbnails(&path, &thumbnail_path, &ts).await?;
 
     println!(
         "[{}] made {} thumbnails in {:?}",
@@ -258,7 +278,12 @@ async fn job_watcher(receiver: Arc<sync::Mutex<JobReceiver>>) {
 
         let res = match job {
             Job::Preview { stream_id, path } => make_preview(stream_id, path).await,
-            Job::Thumbnails { stream_id, path } => make_thumbnails(stream_id, path).await,
+            Job::Thumbnails { stream_id, path } => {
+                try {
+                    make_thumbnails(stream_id, &path).await?;
+                    make_scrub_thumbnails(stream_id, &path).await?;
+                }
+            }
             Job::ClipPreview { clip_id } => make_clip_preview(clip_id).await,
             Job::ClipThumbnail { clip_id } => make_clip_thumbnail(clip_id).await,
             Job::Loudness { stream_id } => update_loudness(stream_id).await,

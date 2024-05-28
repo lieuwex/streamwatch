@@ -10,10 +10,12 @@ use tokio::process::Command;
 use anyhow::Result;
 
 const SECTION_DURATION_SECS: i32 = 1;
+pub const PREVIEW_PER_SECS: f64 = 900.0;
+pub const SCRUB_PER_SECS: f64 = 30.0;
 
-fn get_sections(duration: &Duration) -> Vec<(i32, i32)> {
+fn get_sections(duration: &Duration, per_n_secs: f64) -> Vec<(i32, i32)> {
     let duration = duration.as_secs_f64();
-    let count = std::cmp::max((duration / 900.0) as usize, 1);
+    let count = std::cmp::max((duration / per_n_secs) as usize, 1);
     (1..=count)
         .map(|i| {
             let frac = (i as f64) / ((count + 1) as f64);
@@ -23,9 +25,9 @@ fn get_sections(duration: &Duration) -> Vec<(i32, i32)> {
         .collect()
 }
 
-pub async fn get_sections_from_file(path: &Path) -> Result<Vec<(i32, i32)>> {
+pub async fn get_sections_from_file(path: &Path, per_n_secs: f64) -> Result<Vec<(i32, i32)>> {
     let duration = get_video_duration(path).await?;
-    Ok(get_sections(&duration))
+    Ok(get_sections(&duration, per_n_secs))
 }
 
 /// Creates webp thumbnails

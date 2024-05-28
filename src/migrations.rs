@@ -134,10 +134,32 @@ async fn five() -> Result<()> {
     Ok(())
 }
 
+async fn six() -> Result<()> {
+    let done = version_check!(6);
+
+    let streams = Database::get_streams(get_conn().await?.borrow_mut()).await?;
+
+    let total_count = streams.len();
+    for (i, s) in streams.into_iter().enumerate() {
+        println!("migration 6: stream {}/{}", i + 1, total_count);
+
+        let sender = SENDER.get().unwrap();
+        sender.send(Job::Thumbnails {
+            stream_id: s.info.id,
+            path: s.info.file_name.stream_path(STREAMS_DIR),
+        })?;
+    }
+
+    done().await?;
+
+    Ok(())
+}
+
 pub async fn run() -> Result<()> {
     three().await?;
     four().await?;
     five().await?;
+    six().await?;
 
     Ok(())
 }

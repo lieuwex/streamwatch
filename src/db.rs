@@ -1,3 +1,4 @@
+use crate::create_preview::SCRUB_PER_SECS;
 use crate::loudness::LoudnessDatapoint;
 use crate::util::timestamp;
 
@@ -58,6 +59,10 @@ impl Database {
                 thumbnail_count: {
                     let x: i64 = row.get("thumbnail_count");
                     x as usize
+                },
+                scrub_thumbnail_count: {
+                    let duration: f64 = row.get("duration");
+                    (duration / SCRUB_PER_SECS) as usize
                 },
                 has_chat: row.get("has_chat"),
                 hype_average: row.get("hype_average"),

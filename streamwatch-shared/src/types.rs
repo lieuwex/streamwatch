@@ -153,6 +153,7 @@ pub struct StreamInfo {
     pub duration: Duration,
     pub has_preview: bool,
     pub thumbnail_count: usize,
+    pub scrub_thumbnail_count: usize,
     pub has_chat: bool,
     pub hype_average: Option<f64>,
 }
@@ -172,6 +173,15 @@ impl StreamInfo {
     pub fn thumbnail_urls(&self) -> Vec<String> {
         (0..self.thumbnail_count)
             .map(|i| format!("/thumbnail/{}/{}.webp", self.id, i))
+            .collect()
+    }
+
+    pub fn scrub_thumbnails_path(id: i64) -> PathBuf {
+        Path::new("./scrub_thumbnails").join(id.to_string())
+    }
+    pub fn scrub_thumbnail_urls(&self) -> Vec<String> {
+        (0..self.scrub_thumbnail_count)
+            .map(|i| format!("/scrub_thumbnail/{}/{}.webp", self.id, i))
             .collect()
     }
 }
