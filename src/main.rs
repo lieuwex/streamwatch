@@ -2,6 +2,7 @@
 #![feature(iter_intersperse)]
 #![feature(hash_extract_if)]
 #![feature(try_blocks)]
+#![feature(async_closure)]
 
 mod chat;
 mod chatspeed;

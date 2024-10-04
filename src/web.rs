@@ -436,12 +436,16 @@ async fn add_web_error(request: WebErrorRequest) -> Result<impl warp::Reply, war
     Ok(warp::reply::reply())
 }
 
-async fn check_login(
-    username: String,
-    password: PasswordQuery,
-) -> Result<warp::reply::Response, warp::Rejection> {
-    check_username_password!(conn!(), &username, &password.password, Err(warp::reject()));
-    Ok(reply_status!(StatusCode::OK))
+async fn check_login(username: String, password: PasswordQuery) -> warp::reply::Response {
+    let f = async || {
+        check_username_password!(conn!(), &username, &password.password, Err(warp::reject()));
+        Ok(reply_status!(StatusCode::OK))
+    };
+
+    match f().await {
+        Ok(r) => r,
+        Err(_) => reply_status!(StatusCode::UNAUTHORIZED),
+    }
 }
 async fn signup(
     username: String,
@@ -510,7 +514,7 @@ pub async fn run_server() {
                 .or(warp::get()
                     .and(warp::path!("user" / String))
                     .and(warp::query())
-                    .and_then(check_login))
+                    .then(check_login))
                 .or(warp::post()
                     .and(warp::path!("user" / String))
                     .and(warp::query())
