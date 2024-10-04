@@ -409,6 +409,21 @@ async fn add_twitch_progress(
     Ok(warp::reply::with_status(warp::reply(), StatusCode::CREATED))
 }
 
+async fn check_login(
+    username: String,
+    password: PasswordQuery,
+) -> Result<warp::reply::Response, warp::Rejection> {
+    check_username_password!(conn!(), &username, &password.password, Err(warp::reject()));
+    Ok(reply_status!(StatusCode::OK))
+}
+async fn signup(
+    username: String,
+    password: PasswordQuery,
+) -> Result<warp::reply::Response, warp::Rejection> {
+    check!(Database::signup(conn!(), &username, &password.password).await);
+    Ok(reply_status!(StatusCode::CREATED))
+}
+
 pub async fn run_server() {
     let endpoints = {
         let cors = warp::cors()
@@ -465,6 +480,14 @@ pub async fn run_server() {
                 .or(warp::get()
                     .and(warp::path!("stream" / i64 / "otherProgress"))
                     .and_then(get_stream_other_progress))
+                .or(warp::get()
+                    .and(warp::path!("user" / String))
+                    .and(warp::query())
+                    .and_then(check_login))
+                .or(warp::post()
+                    .and(warp::path!("user" / String))
+                    .and(warp::query())
+                    .and_then(signup))
                 .or(warp::put()
                     .and(warp::path!("user" / String / "progress"))
                     .and(warp::query())

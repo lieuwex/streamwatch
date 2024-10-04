@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 use sqlx::sqlite::{SqliteConnection, SqlitePool, SqliteRow};
 use sqlx::{Connection, Row};
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 
 use chrono::{DateTime, Utc};
 
@@ -302,6 +302,36 @@ impl Database {
             .execute(tx.deref_mut())
             .await?;
         }
+
+        tx.commit().await?;
+        Ok(())
+    }
+
+    pub async fn signup(conn: &mut SqliteConnection, username: &str, password: &str) -> Result<()> {
+        let mut tx = conn.begin().await?;
+
+        let username_taken = Self::get_userid_by_username(tx.borrow_mut(), username)
+            .await?
+            .is_some();
+        if username_taken {
+            bail!("username already taken");
+        }
+
+        let created_at = Utc::now().timestamp();
+
+        sqlx::query!(
+            r#"
+            INSERT INTO users
+                (username, password, inserted_at)
+            VALUES
+                (?1, ?2, ?3)
+            "#,
+            username,
+            password,
+            created_at,
+        )
+        .execute(tx.deref_mut())
+        .await?;
 
         tx.commit().await?;
         Ok(())
