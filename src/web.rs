@@ -455,6 +455,28 @@ async fn signup(
     Ok(reply_status!(StatusCode::CREATED))
 }
 
+#[derive(Clone, Debug, Deserialize)]
+struct WebVisitRequest {
+    user_agent: String,
+    ip_address: Option<String>,
+    href: String,
+    username: Option<String>,
+}
+async fn add_web_visit(request: WebVisitRequest) -> Result<impl warp::Reply, warp::Rejection> {
+    let ts = Utc::now().timestamp();
+
+    check!(sqlx::query!(
+        "INSERT INTO web_visits(user_agent, ip_address, href, username, ts) values(?1, ?2, ?3, ?4, ?5)",
+        request.user_agent,
+        request.ip_address,
+        request.href,
+        request.username,
+        ts,
+    ).execute(conn!().deref_mut()).await);
+
+    Ok(warp::reply::reply())
+}
+
 pub async fn run_server() {
     let endpoints = {
         let cors = warp::cors()
@@ -565,7 +587,11 @@ pub async fn run_server() {
                 .or(warp::post()
                     .and(warp::path!("web_error"))
                     .and(warp::body::json())
-                    .and_then(add_web_error)),
+                    .and_then(add_web_error))
+                .or(warp::post()
+                    .and(warp::path!("visit"))
+                    .and(warp::body::json())
+                    .and_then(add_web_visit)),
         );
         let static_paths = warp::path("video")
             .and(warp::fs::file("./build/index.html"))
