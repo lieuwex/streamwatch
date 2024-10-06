@@ -251,6 +251,10 @@ async fn set_streams_progress(
     password: PasswordQuery,
     progress: HashMap<i64, f64>,
 ) -> Result<warp::reply::Response, warp::Rejection> {
+    if username == "admin" {
+        return Ok(warp::reply().into_response());
+    }
+
     let mut conn = get_conn!();
 
     let user_id = check_username_password!(
