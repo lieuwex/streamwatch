@@ -4,7 +4,7 @@ use crate::job_handler::{Job, SENDER};
 use crate::scan::scan_streams;
 use crate::util::AnyhowError;
 use crate::watchparty::{get_watch_parties, watch_party_ws};
-use crate::{check, conn, get_conn, DB, STREAMS_DIR};
+use crate::{check, conn, function, get_conn, DB, STREAMS_DIR};
 
 use chrono::Utc;
 use futures::TryStreamExt;
@@ -45,6 +45,8 @@ macro_rules! check_username_password {
         if !check!(Database::check_password($conn, user_id, $password).await) {
             return $on_err;
         }
+
+        let _ = Database::insert_api_call($conn, $username, function!()).await;
 
         user_id
     }};
@@ -333,6 +335,9 @@ async fn add_clip_view(
         return Err(warp::reject());
     }
 
+    if user_id.is_some() {
+        let _ = Database::insert_api_call(&mut conn, &params.username, function!()).await;
+    }
     check!(Database::add_clip_view(&mut conn, clip_id, user_id).await);
 
     Ok(warp::reply::with_status(warp::reply(), StatusCode::CREATED))
@@ -451,7 +456,11 @@ async fn signup(
     username: String,
     password: PasswordQuery,
 ) -> Result<warp::reply::Response, warp::Rejection> {
-    check!(Database::signup(conn!(), &username, &password.password).await);
+    let mut conn = get_conn!();
+
+    check!(Database::signup(&mut conn, &username, &password.password).await);
+    let _ = Database::insert_api_call(&mut conn, &username, function!()).await;
+
     Ok(reply_status!(StatusCode::CREATED))
 }
 

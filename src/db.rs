@@ -889,4 +889,21 @@ impl Database {
         tx.commit().await?;
         Ok(())
     }
+
+    pub async fn insert_api_call(
+        conn: &mut SqliteConnection,
+        username: &str,
+        function_name: &str,
+    ) -> Result<()> {
+        let ts = Utc::now().timestamp();
+        sqlx::query!(
+            "INSERT INTO api_calls(username, function_name, ts) values(?1, ?2, ?3)",
+            username,
+            function_name,
+            ts,
+        )
+        .execute(conn)
+        .await?;
+        Ok(())
+    }
 }
