@@ -4,7 +4,7 @@ use crate::job_handler::{Job, SENDER};
 use crate::scan::scan_streams;
 use crate::util::AnyhowError;
 use crate::watchparty::{get_watch_parties, watch_party_ws};
-use crate::{check, conn, function, get_conn, DB, STREAMS_DIR};
+use crate::{check, conn, function, get_conn, DB, STREAMS_DIR, STREAMS_JSON_CACHE};
 
 use chrono::Utc;
 use futures::TryStreamExt;
@@ -15,7 +15,7 @@ use streamwatch_shared::types::{
 
 use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
-use std::ops::DerefMut;
+use std::ops::{Deref, DerefMut};
 use std::str::FromStr;
 
 use warp::http::StatusCode;
@@ -117,8 +117,9 @@ pub struct PasswordQuery {
 }
 
 async fn streams() -> Result<warp::reply::Json, warp::Rejection> {
-    let streams: Vec<StreamJson> = check!(Database::get_streams(conn!()).await);
-    Ok(warp::reply::json(&streams))
+    let cache = STREAMS_JSON_CACHE.get().unwrap();
+    let streams = cache.read().await;
+    Ok(warp::reply::json(streams.deref()))
 }
 
 async fn processing_streams() -> Result<warp::reply::Json, warp::Rejection> {

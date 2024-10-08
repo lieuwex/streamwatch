@@ -11,7 +11,7 @@ use crate::create_preview::{
 use crate::db::Database;
 use crate::loudness::get_loudness_points;
 use crate::util::get_conn;
-use crate::{okky, DB, STREAMS_DIR};
+use crate::{okky, update_cache, DB, STREAMS_DIR};
 
 use sqlx::SqliteConnection;
 use streamwatch_shared::types::{Clip, StreamInfo, StreamJson};
@@ -127,6 +127,7 @@ async fn make_preview(stream_id: i64, path: PathBuf) -> Result<()> {
     )
     .execute(&db.pool)
     .await?;
+    update_cache().await?;
 
     println!("[{}] made preview in {:?}", stream_id, start.elapsed());
 
@@ -181,6 +182,7 @@ async fn make_thumbnails(stream_id: i64, path: &Path) -> Result<()> {
     )
     .execute(&db.pool)
     .await?;
+    update_cache().await?;
 
     println!(
         "[{}] made {} thumbnails in {:?}",

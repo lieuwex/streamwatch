@@ -1,5 +1,6 @@
 use crate::create_preview::SCRUB_PER_SECS;
 use crate::loudness::LoudnessDatapoint;
+use crate::update_cache;
 use crate::util::timestamp;
 
 use streamwatch_shared::types::{
@@ -177,6 +178,7 @@ impl Database {
         sqlx::query!("DELETE FROM streams WHERE id = ?1", stream_id)
             .execute(conn.borrow_mut())
             .await?;
+        update_cache().await?;
         Ok(())
     }
 
@@ -268,6 +270,8 @@ impl Database {
         }
 
         tx.commit().await?;
+
+        update_cache().await?;
         Ok(())
     }
 
@@ -304,6 +308,8 @@ impl Database {
         }
 
         tx.commit().await?;
+
+        update_cache().await?;
         Ok(())
     }
 
@@ -529,6 +535,7 @@ impl Database {
         .execute(conn.borrow_mut())
         .await?;
 
+        update_cache().await?;
         Ok(())
     }
 
@@ -565,6 +572,7 @@ impl Database {
             .await?;
         }
 
+        update_cache().await?;
         Ok(())
     }
 
@@ -622,6 +630,8 @@ impl Database {
         }
 
         tx.commit().await?;
+
+        update_cache().await?;
         Ok(())
     }
 
@@ -656,6 +666,8 @@ impl Database {
         }
 
         tx.commit().await?;
+
+        update_cache().await?;
         Ok(())
     }
 
@@ -690,6 +702,8 @@ impl Database {
         }
 
         tx.commit().await?;
+
+        update_cache().await?;
         Ok(())
     }
 

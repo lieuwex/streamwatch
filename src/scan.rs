@@ -1,7 +1,7 @@
 use crate::db::Database;
 use crate::job_handler::{Job, SENDER};
 use crate::util::{get_conn, timestamp};
-use crate::{DB, STREAMS_DIR};
+use crate::{update_cache, DB, STREAMS_DIR};
 
 use streamwatch_shared::functions::{get_video_duration, parse_filename};
 use streamwatch_shared::types::{
@@ -205,6 +205,7 @@ async fn handle_new_stream(path: &Path, file_name: String, file_size: i64) -> Re
     sender.send(Job::Loudness { stream_id })?;
     sender.send(Job::Chatspeed { stream_id })?;
 
+    update_cache().await?;
     Ok(())
 }
 
@@ -263,6 +264,7 @@ async fn handle_modified_stream(path: &Path, file_name: String, file_size: i64) 
     sender.send(Job::Loudness { stream_id })?;
     sender.send(Job::Chatspeed { stream_id })?;
 
+    update_cache().await?;
     Ok(())
 }
 
@@ -362,6 +364,8 @@ pub async fn scan_streams() -> Result<()> {
                 remove_thumbnails_and_preview(tx.deref_mut(), stream_id).await?;
                 Database::remove_stream(&mut tx, stream_id).await?;
                 tx.commit().await?;
+
+                update_cache().await?;
             }
         }
     }
