@@ -604,14 +604,14 @@ pub async fn run_server() {
                     .and_then(add_web_visit)),
         );
         let static_paths = warp::path("video")
-            .and(warp::fs::file("./build/index.html"))
-            .or(warp::path("login").and(warp::fs::file("./build/index.html")))
-            .or(warp::path("watchparty").and(warp::fs::file("./build/index.html")))
-            .or(warp::path("clip").and(warp::fs::file("./build/index.html")))
-            .or(warp::path("clips").and(warp::fs::file("./build/index.html")))
-            .or(warp::path("static").and(warp::fs::dir("./build/static")))
-            .or(warp::path::end().and(warp::fs::file("./build/index.html")))
-            .or(warp::path::end().and(warp::fs::dir("./build")));
+            .and(warp::fs::file("./dist/index.html"))
+            .or(warp::path("login").and(warp::fs::file("./dist/index.html")))
+            .or(warp::path("watchparty").and(warp::fs::file("./dist/index.html")))
+            .or(warp::path("clip").and(warp::fs::file("./dist/index.html")))
+            .or(warp::path("clips").and(warp::fs::file("./dist/index.html")))
+            .or(warp::path("assets").and(warp::fs::dir("./dist/assets")))
+            .or(warp::path::end().and(warp::fs::file("./dist/index.html")))
+            .or(warp::path::end().and(warp::fs::dir("./dist")));
         let compressed = api_paths.or(static_paths).with(warp::compression::gzip());
 
         let uncompressed = (warp::path("stream").and(warp::fs::dir(STREAMS_DIR)))
